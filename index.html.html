@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Seating Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .transition-all { transition: all 0.2s ease-in-out; }
+        .sidebar-section { margin-bottom: 1.5rem; }
+        .sidebar-title { font-size: 1.125rem; font-weight: 600; color: #374151; margin-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+        [type='checkbox'] { border-radius: 0.25rem; }
+        .seat-empty { background-color: #e5e7eb; background-image: repeating-linear-gradient(45deg, #d1d5db 25%, transparent 25%, transparent 75%, #d1d5db 75%, #d1d5db), repeating-linear-gradient(45deg, #d1d5db 25%, #e5e7eb 25%, #e5e7eb 75%, #d1d5db 75%, #d1d5db); background-position: 0 0, 5px 5px; background-size: 10px 10px; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+
+        const LOCAL_STORAGE_KEY = 'seatingPlannerData_v33_STABLE'; // Incremented version
+        const EMPTY_SEAT_ID = '__EMPTY__';
+
+        // --- Helper Components ---
+        const StudentListItem = React.memo(({ student, onUpdate, onDelete }) => {
+            const handleUpdate = (field, value) => {
+                onUpdate({ ...student, [field]: value });
+            };
+
+            return (
+                <div className="grid grid-cols-6 gap-2 items-center bg-gray-50 p-2 rounded-lg mb-2 border text-sm">
+                    <span className="col-span-2 truncate">{student.name}</span>
+                    <select value={student.gender} onChange={e => handleUpdate('gender', e.target.value)} className="p-1 border rounded bg-white">
+                        <option value="unspecified">N/A</option><option value="male">M</option><option value="female">F</option>
+                    </select>
+                    <label className="flex items-center justify-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={student.isTall} onChange={e => handleUpdate('isTall', e.target.checked)} /> T
+                    </label>
+                    <label className="flex items-center justify-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={student.isFront} onChange={e => handleUpdate('isFront', e.target.checked)} /> F
+                    </label>
+                    <button onClick={() => onDelete(student.id)} className="text-red-500 hover:text-red-700 justify-self-end">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                        </svg>
+                    </button>
+                </div>
+            );
+        });
+
+        // --- Main App Component ---
+        function SeatingPlanner() {
+            // Plan Info
+            const [planTitle, setPlanTitle] = useState("");
+
+            // Layout and View State
+            const [rows, setRows] = useState(5); const [cols, setCols] = useState(6);
+            const [committedRows, setCommittedRows] = useState(5); const [committedCols, setCommittedCols] = useState(6);
+            const [groupRows, setGroupRows] = useState(2); const [groupCols, setGroupCols] = useState(3);
+            const [committedGroupRows, setCommittedGroupRows] = useState(2); const [committedGroupCols, setCommittedGroupCols] = useState(3);
+            const [groupSize, setGroupSize] = useState(4); const [columnGrouping, setColumnGrouping] = useState(2);
+            const [tableNumberingOrder, setTableNumberingOrder] = useState('lrtb');
+            const [view, setView] = useState('traditional');
+            const [displayView, setDisplayView] = useState('natural');
+            const [tallStudentPlacement, setTallStudentPlacement] = useState('back_row');
+            const [frontStudentPlacement, setFrontStudentPlacement] = useState('front_row');
+            const [tallStudentPlacementGroups, setTallStudentPlacementGroups] = useState('back_row');
+            const [prioritizeSameSex, setPrioritizeSameSex] = useState(false);
+            const [emptyTablesInput, setEmptyTablesInput] = useState("");
+            
+            // Student, Seat, and Rule State
+            const [students, setStudents] = useState([]);
+            const [massInput, setMassInput] = useState("");
+            const [classSeats, setClassSeats] = useState({});
+            const [groupSeats, setGroupSeats] = useState({});
+            const [manuallyAssignedSeats, setManuallyAssignedSeats] = useState(new Set());
+            const [rules, setRules] = useState([]);
+            const [history, setHistory] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [activeAssigningSeat, setActiveAssigningSeat] = useState(null);
+            const [errorMessage, setErrorMessage] = useState("");
+
+            // --- Data Persistence ---
+            useEffect(() => {
+                try {
+                    const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+                    if (savedData) {
+                        const data = JSON.parse(savedData);
+                        setPlanTitle(data.planTitle || "");
+                        setStudents(data.students || []); 
+                        setClassSeats(data.classSeats || {});
+                        setGroupSeats(data.groupSeats || {});
+                        setManuallyAssignedSeats(new Set(data.manuallyAssignedSeats || []));
+                        setRows(data.rows || 5); setCols(data.cols || 6);
+                        setCommittedRows(data.committedRows || 5); setCommittedCols(data.committedCols || 6);
+                        setGroupRows(data.groupRows || 2); setGroupCols(data.groupCols || 3);
+                        setCommittedGroupRows(data.committedGroupRows || 2); setCommittedGroupCols(data.committedGroupCols || 3);
+                        setGroupSize(data.groupSize || 4); setColumnGrouping(data.columnGrouping || 2);
+                        setTableNumberingOrder(data.tableNumberingOrder || 'lrtb');
+                        setDisplayView(data.displayView || 'natural');
+                        setTallStudentPlacement(data.tallStudentPlacement || 'back_row');
+                        setFrontStudentPlacement(data.frontStudentPlacement || 'front_row');
+                        setTallStudentPlacementGroups(data.tallStudentPlacementGroups || 'back_row');
+                        setPrioritizeSameSex(data.prioritizeSameSex || false);
+                        setEmptyTablesInput(data.emptyTablesInput || "");
+                        setView(data.view || 'traditional'); setRules(data.rules || []);
+                    }
+                } catch (error) { console.error("Failed to load data from localStorage", error); }
+                setIsLoading(false);
+            }, []);
+
+            useEffect(() => {
+                if (!isLoading) {
+                    const dataToSave = JSON.stringify({ planTitle, students, classSeats, groupSeats, manuallyAssignedSeats: [...manuallyAssignedSeats], rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, emptyTablesInput });
+                    localStorage.setItem(LOCAL_STORAGE_KEY, dataToSave);
+                }
+            }, [planTitle, students, classSeats, groupSeats, manuallyAssignedSeats, rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, emptyTablesInput]);
+
+            const currentSeats = view === 'traditional' ? classSeats : groupSeats;
+            const setCurrentSeats = view === 'traditional' ? setClassSeats : setGroupSeats;
+
+            const potentialSeats = useMemo(() => {
+                if (view === 'traditional') return (rows > 0 && cols > 0) ? rows * cols : 0;
+                return (groupRows > 0 && groupCols > 0 && groupSize > 0) ? groupRows * groupCols * groupSize : 0;
+            }, [rows, cols, groupRows, groupCols, groupSize, view]);
+
+            const addStudents = () => {
+                const newStudents = massInput.split('\n').map(line => line.trim()).filter(line => line)
+                    .map(line => {
+                        const parts = line.split(/[\t,]/).map(p => p.trim());
+                        const name = parts[0];
+                        let gender = 'unspecified';
+                        if (parts.length > 1) {
+                            const genderHint = parts[1].toLowerCase();
+                            if (genderHint === 'm' || genderHint === 'male') gender = 'male';
+                            else if (genderHint === 'f' || genderHint === 'female') gender = 'female';
+                        }
+                        return { id: `student-${Date.now()}-${Math.random()}`, name, gender, isTall: false, isFront: false };
+                    });
+                setStudents(current => [...current, ...newStudents]);
+                setMassInput("");
+            };
+
+            const clearAllStudents = () => {
+                setStudents([]);
+                setClassSeats({});
+                setGroupSeats({});
+                setRules([]);
+                setManuallyAssignedSeats(new Set());
+            };
+
+            const updateStudent = (updatedStudent) => { setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s)); };
+            
+            const deleteStudent = (studentId) => { 
+                const updatedClassSeats = { ...classSeats };
+                Object.keys(updatedClassSeats).forEach(key => { if (updatedClassSeats[key] === studentId) delete updatedClassSeats[key]; });
+                setClassSeats(updatedClassSeats);
+                const updatedGroupSeats = { ...groupSeats };
+                Object.keys(updatedGroupSeats).forEach(key => { if (updatedGroupSeats[key] === studentId) delete updatedGroupSeats[key]; });
+                setGroupSeats(updatedGroupSeats);
+                setStudents(prev => prev.filter(s => s.id !== studentId)); 
+            };
+            
+            const assignSeat = (r, c, studentId) => {
+                const key = `${r}-${c}`;
+                setCurrentSeats(prev => {
+                    const updated = { ...prev };
+                    if (studentId && studentId !== EMPTY_SEAT_ID) {
+                        Object.keys(updated).forEach(k => { if (updated[k] === studentId) delete updated[k]; });
+                    }
+                    if (studentId) { updated[key] = studentId; } else { delete updated[key]; }
+                    return updated;
+                });
+                setManuallyAssignedSeats(prev => {
+                    const next = new Set(prev);
+                    if (studentId && studentId !== EMPTY_SEAT_ID) { next.add(key); } else { next.delete(key); }
+                    return next;
+                });
+                setActiveAssigningSeat(null);
+            };
+
+            const handleDisplayLayout = () => { setCommittedRows(rows); setCommittedCols(cols); setCommittedGroupRows(groupRows); setCommittedGroupCols(groupCols);};
+            
+            const resetDraft = () => { 
+                const newSeats = {}; 
+                const seatsForView = view === 'traditional' ? classSeats : groupSeats;
+                manuallyAssignedSeats.forEach(key => { if(seatsForView[key]) newSeats[key] = seatsForView[key]; }); 
+                Object.entries(seatsForView).forEach(([key, value]) => { if (value === EMPTY_SEAT_ID) newSeats[key] = value; }); 
+                setCurrentSeats(newSeats); 
+            };
+            
+            const generateDraftPlan = () => {
+                setErrorMessage("");
+                const getStudentName = (id) => students.find(s=>s.id === id)?.name || 'Unknown';
+
+                try {
+                    setHistory(prev => [...prev, { timestamp: new Date(), classSeats, groupSeats, view, title: `Draft at ${new Date().toLocaleTimeString()}` }]);
+                    
+                    const newAssignments = { ...currentSeats };
+                    let assignedStudentIds = new Set(Object.values(newAssignments).filter(id => id && id !== EMPTY_SEAT_ID));
+                    let unassignedStudents = students.filter(s => !assignedStudentIds.has(s.id));
+                    
+                    const shuffle = (array) => { for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; } return array; };
+                    
+                    const groupRules = rules.filter(r => r.type === 'group');
+                    const separationRules = rules.filter(r => r.type === 'separate');
+
+                    if (view === 'traditional') {
+                        let availableSeatCoords = [];
+                        for (let r = 0; r < committedRows; r++) { for (let c = 0; c < committedCols; c++) { if (!newAssignments[`${r}-${c}`]) availableSeatCoords.push({ r, c, key: `${r}-${c}` }); } }
+                        
+                        const isPlacementValid = (studentId, seatCoord, currentPlan) => {
+                             for (const rule of separationRules) {
+                                if (rule.studentIds.includes(studentId)) {
+                                    for (const otherStudentId of rule.studentIds) {
+                                        if (studentId === otherStudentId) continue;
+                                        const otherStudentSeatKey = Object.keys(currentPlan).find(key => currentPlan[key] === otherStudentId);
+                                        if (otherStudentSeatKey) {
+                                            const [otherR, otherC] = otherStudentSeatKey.split('-').map(Number);
+                                            const chebyshevDistance = Math.max(Math.abs(seatCoord.r - otherR), Math.abs(seatCoord.c - otherC));
+                                            if (chebyshevDistance < rule.condition.value) {
+                                                return false;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return true;
+                        };
+
+                        for (const rule of groupRules) {
+                            const studentsToGroup = rule.studentIds.filter(id => !assignedStudentIds.has(id));
+                            if (studentsToGroup.length < 2) continue;
+
+                            let placedGroup = false;
+                            if (rule.condition.in_pair) {
+                                if (studentsToGroup.length !== 2) {
+                                    setErrorMessage(`"Sit in a pair" rule only works for 2 students. Error with group: ${studentsToGroup.map(getStudentName).join(', ')}`);
+                                    return;
+                                }
+                                const pairs = [];
+                                for (const r of Array.from({length: committedRows}, (_, i) => i)) {
+                                     for (let c = 0; c < committedCols; c += columnGrouping) {
+                                         if(c + 1 < committedCols) {
+                                             const key1 = `${r}-${c}`; const key2 = `${r}-${c + 1}`;
+                                             if(availableSeatCoords.some(s=>s.key===key1) && availableSeatCoords.some(s=>s.key===key2)) {
+                                                 pairs.push([key1, key2]);
+                                             }
+                                         }
+                                     }
+                                }
+                                if(pairs.length > 0) {
+                                    const spot = shuffle(pairs)[0];
+                                    newAssignments[spot[0]] = studentsToGroup[0];
+                                    newAssignments[spot[1]] = studentsToGroup[1];
+                                    unassignedStudents = unassignedStudents.filter(s => !studentsToGroup.includes(s.id));
+                                    availableSeatCoords = availableSeatCoords.filter(s => s.key !== spot[0] && s.key !== spot[1]);
+                                    studentsToGroup.forEach(id => assignedStudentIds.add(id));
+                                    placedGroup = true;
+                                }
+                            } else {
+                                // Default grouping logic (adjacent)
+                                for (const r of shuffle(Array.from({length: committedRows}, (_, i) => i))) {
+                                    for (const c of shuffle(Array.from({length: committedCols - studentsToGroup.length + 1}, (_, i) => i))) {
+                                        const spotKeys = studentsToGroup.map((_, i) => `${r}-${c + i}`);
+                                        if (spotKeys.every(key => availableSeatCoords.some(s => s.key === key))) {
+                                            spotKeys.forEach((key, i) => { newAssignments[key] = studentsToGroup[i]; });
+                                            unassignedStudents = unassignedStudents.filter(s => !studentsToGroup.includes(s.id));
+                                            availableSeatCoords = availableSeatCoords.filter(s => !spotKeys.includes(s.key));
+                                            studentsToGroup.forEach(id => assignedStudentIds.add(id));
+                                            placedGroup = true;
+                                            break;
+                                        }
+                                    }
+                                    if(placedGroup) break;
+                                }
+                            }
+                            if (!placedGroup) { setErrorMessage(`Could not find spot for group: ${studentsToGroup.map(getStudentName).join(', ')}`); return; }
+                        }
+                        
+                        const placeSpecialStudentsWithRules = (studentList, seatFilter) => {
+                            let studentsToPlace = shuffle([...studentList]);
+                            let seatsForPlacing = shuffle(availableSeatCoords.filter(seatFilter));
+                            studentsToPlace.forEach(student => {
+                                for (let i = 0; i < seatsForPlacing.length; i++) {
+                                    const seat = seatsForPlacing[i];
+                                    if (isPlacementValid(student.id, seat, newAssignments)) {
+                                        newAssignments[seat.key] = student.id;
+                                        unassignedStudents = unassignedStudents.filter(s => s.id !== student.id);
+                                        availableSeatCoords = availableSeatCoords.filter(s => s.key !== seat.key);
+                                        assignedStudentIds.add(student.id);
+                                        seatsForPlacing.splice(i, 1);
+                                        break;
+                                    }
+                                }
+                            });
+                        };
+
+                        placeSpecialStudentsWithRules(unassignedStudents.filter(s => s.isFront), ({ r }) => frontStudentPlacement === 'front_row' ? r === 0 : r <= 1);
+                        placeSpecialStudentsWithRules(unassignedStudents.filter(s => s.isTall), ({ r, c }) => {
+                            if (tallStudentPlacement === 'back_row') return r === committedRows - 1;
+                            if (tallStudentPlacement === 'back_two_rows') return r >= committedRows - 2;
+                            if (tallStudentPlacement === 'back_sides') return r === committedRows - 1 || c === 0 || c === committedCols - 1;
+                            return false;
+                        });
+
+                        if(prioritizeSameSex) {
+                            let maleStudents = unassignedStudents.filter(s => s.gender === 'male');
+                            let femaleStudents = unassignedStudents.filter(s => s.gender === 'female');
+                            const otherStudents = unassignedStudents.filter(s => s.gender !== 'male' && s.gender !== 'female');
+                            const seatPairs = [];
+                            const singleSeats = new Set(availableSeatCoords.map(s => s.key));
+
+                            for (const r of Array.from({length: committedRows}, (_, i) => i)) {
+                                for (let c = 0; c < committedCols; c += columnGrouping) {
+                                    if (c + 1 < committedCols) {
+                                        const key1 = `${r}-${c}`; const key2 = `${r}-${c + 1}`;
+                                        if (singleSeats.has(key1) && singleSeats.has(key2)) {
+                                            seatPairs.push([key1, key2]);
+                                            singleSeats.delete(key1); singleSeats.delete(key2);
+                                        }
+                                    }
+                                }
+                            }
+                            shuffle(seatPairs); shuffle(maleStudents); shuffle(femaleStudents);
+
+                            while (maleStudents.length >= 2 && seatPairs.length > 0) { const pair = seatPairs.pop(); newAssignments[pair[0]] = maleStudents.pop().id; newAssignments[pair[1]] = maleStudents.pop().id; }
+                            while (femaleStudents.length >= 2 && seatPairs.length > 0) { const pair = seatPairs.pop(); newAssignments[pair[0]] = femaleStudents.pop().id; newAssignments[pair[1]] = femaleStudents.pop().id; }
+                            if (maleStudents.length === 1 && femaleStudents.length === 1 && seatPairs.length > 0) { const pair = seatPairs.pop(); newAssignments[pair[0]] = maleStudents.pop().id; newAssignments[pair[1]] = femaleStudents.pop().id; }
+                            
+                            const remainingStudents = shuffle([...maleStudents, ...femaleStudents, ...otherStudents]);
+                            const remainingSeatKeys = shuffle([...Array.from(singleSeats), ...seatPairs.flat()]);
+                            
+                            remainingStudents.forEach((student, i) => { if (remainingSeatKeys[i]) { newAssignments[remainingSeatKeys[i]] = student.id; }});
+                        } else {
+                            shuffle(unassignedStudents).forEach(student => {
+                                for (const seat of shuffle([...availableSeatCoords])) {
+                                    if (isPlacementValid(student.id, seat, newAssignments)) {
+                                        newAssignments[seat.key] = student.id;
+                                        availableSeatCoords = availableSeatCoords.filter(s => s.key !== seat.key);
+                                        break;
+                                    }
+                                }
+                            });
+                        }
+                    } else { // Groups view
+                         // Group View Logic Here...
+                    }
+                    setCurrentSeats(newAssignments);
+                } catch(error) {
+                    console.error("Error generating draft plan:", error);
+                    setErrorMessage("An unexpected error occurred. See console for details.");
+                }
+            };
+
+            const restoreFromHistory = (historyEntry) => {
+                setClassSeats(historyEntry.classSeats);
+                setGroupSeats(historyEntry.groupSeats);
+                setView(historyEntry.view);
+            };
+
+            const exportToWord = () => {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                const filenameDate = `${now.getFullYear().toString().slice(-2)}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}`;
+                let content = `<p style="font-size: 10pt; text-align: right;">Generated on: ${dateStr}, ${timeStr}</p><h1>${planTitle || 'Seating Plan'}</h1>`;
+                const seatsToExport = view === 'traditional' ? classSeats : groupSeats;
+                const studentMap = new Map(students.map(s => [s.id, s.name]));
+                
+                const teacherDesk = `<div style="text-align: center; border: 2px solid #ccc; padding: 15px; margin: 30px auto; width: 80%; font-weight: bold; background: #f3f4f6;">Teacher's Desk</div>`;
+                if(displayView === 'natural') content += teacherDesk;
+
+                if (view === 'traditional') {
+                    content += '<table style="border-collapse: collapse; width: 100%;">';
+                    for (let r = 0; r < committedRows; r++) {
+                        content += '<tr>';
+                        const colsArray = Array.from({ length: committedCols }, (_, i) => i);
+                        const columnChunks = [];
+                        for (let i = 0; i < committedCols; i += columnGrouping) {
+                            columnChunks.push(colsArray.slice(i, i + columnGrouping));
+                        }
+                        columnChunks.forEach((chunk, chunkIndex) => {
+                            chunk.forEach(c => {
+                                const studentId = seatsToExport[`${r}-${c}`];
+                                const studentName = studentId === EMPTY_SEAT_ID ? 'EMPTY' : studentMap.get(studentId) || '';
+                                content += `<td style="border: 1px solid black; padding: 10px; min-width: 80px; height: 60px; text-align: center; vertical-align: middle;">${studentName}</td>`;
+                            });
+                            if (chunkIndex < columnChunks.length - 1) {
+                                content += '<td style="width: 50px; border: none;"></td>';
+                            }
+                        });
+                        content += '</tr>';
+                    }
+                    content += '</table>';
+                } else {
+                     content += '<table style="width: 100%; border-collapse: separate; border-spacing: 25px;">';
+                     for (let r = 0; r < committedGroupRows; r++) {
+                        content += '<tr>';
+                        for (let c = 0; c < committedGroupCols; c++) {
+                            content += '<td style="vertical-align: top; text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">';
+                            const groupId = r * committedGroupCols + c;
+                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                            content += `<h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14pt;">Table ${tableNumber}</h3>`;
+                            content += '<ul style="list-style-type: none; margin: 0; padding: 0; text-align: left;">';
+                            let hasStudents = false;
+                            for (let i = 0; i < groupSize; i++) {
+                                const studentId = seatsToExport[`${groupId}-${i}`];
+                                if (studentId) {
+                                    hasStudents = true;
+                                    const studentName = studentId === EMPTY_SEAT_ID ? '<em>(Empty Seat)</em>' : studentMap.get(studentId) || '...';
+                                    content += `<li style="padding: 4px; border-bottom: 1px solid #eee;">${studentName}</li>`;
+                                }
+                            }
+                            if (!hasStudents) {
+                                for (let i = 0; i < groupSize; i++) {
+                                    if (!seatsToExport[`${groupId}-${i}`]) content += `<li style="padding: 4px; border-bottom: 1px solid #eee; color: #9ca3af;">(available)</li>`;
+                                }
+                            }
+                            content += '</ul></td>';
+                        }
+                        content += '</tr>';
+                    }
+                    content += '</table>';
+                }
+                if(displayView === 'traditional') content += teacherDesk;
+
+                const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Export HTML to Word Document</title><style>@page{size:landscape;mso-page-orientation:landscape;}</style></head><body>`;
+                const footer = "</body></html>";
+                const sourceHTML = header + content + footer;
+                const source = 'data:application/vnd.ms-word;charset=utf-8,' + encodeURIComponent(sourceHTML);
+                const fileDownload = document.createElement("a");
+                document.body.appendChild(fileDownload);
+                fileDownload.href = source;
+                fileDownload.download = `${(planTitle || 'seating-plan').replace(/ /g, '_')}_${filenameDate}.doc`;
+                fileDownload.click();
+                document.body.removeChild(fileDownload);
+            };
+
+            if (isLoading) return <div>Loading...</div>;
+
+            return (
+                <div className="flex flex-col md:flex-row min-h-screen md:h-screen font-sans md:overflow-hidden">
+                    <aside className="w-full md:w-[420px] md:max-w-sm bg-white border-r p-6 flex flex-col shadow-lg shrink-0 overflow-y-auto">
+                        <header className="mb-6">
+                            <h1 className="text-3xl font-bold text-center mb-4">Seating Planner</h1>
+                            <div className="flex flex-col sm:flex-row gap-2 p-1 bg-gray-200 rounded-lg">
+                                <button onClick={() => setView('traditional')} className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold text-center transition-all ${view === 'traditional' ? 'bg-indigo-600 text-white shadow' : 'bg-transparent text-gray-600'}`}>
+                                    Classroom Setting
+                                </button>
+                                <button onClick={() => setView('groups')} className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold text-center transition-all ${view === 'groups' ? 'bg-indigo-600 text-white shadow' : 'bg-transparent text-gray-600'}`}>
+                                    Group Settings (e.g. lab)
+                                </button>
+                            </div>
+                        </header>
+                        <div className="flex-grow overflow-y-auto pr-2">
+                             <section className="sidebar-section">
+                                <h2 className="sidebar-title">Plan Title</h2>
+                                <input type="text" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="Enter title of your plan (e.g. 5E Biology)" className="mt-1 w-full p-2 border rounded"/>
+                            </section>
+                             <section className="sidebar-section">
+                                <h2 className="sidebar-title">Layout Settings</h2>
+                                {view === 'traditional' ? ( <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div><label>Rows</label><input type="number" min="1" value={rows} onChange={e => setRows(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                        <div><label>Columns</label><input type="number" min="1" value={cols} onChange={e => setCols(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                        <div className="col-span-2"><label>Group Columns by</label><input type="number" min="1" value={columnGrouping} onChange={e => setColumnGrouping(parseInt(e.target.value))} className="mt-1 w-full p-2 border rounded"/></div>
+                                    </div>
+                                    <div className="mt-4"><label className="font-semibold text-gray-700">Placement Preferences</label>
+                                        <div className="mt-2 space-y-2 text-sm">
+                                            <p>Tall Students (T):</p>
+                                            <div className="flex flex-col ml-4">
+                                                <label><input type="radio" name="tall_pref" value="back_row" checked={tallStudentPlacement === 'back_row'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row only</label>
+                                                <label><input type="radio" name="tall_pref" value="back_two_rows" checked={tallStudentPlacement === 'back_two_rows'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back two rows</label>
+                                                <label><input type="radio" name="tall_pref" value="back_sides" checked={tallStudentPlacement === 'back_sides'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row and at two sides column</label>
+                                            </div>
+                                            <p className="pt-2">Front Students (F):</p>
+                                             <div className="flex flex-col ml-4">
+                                                <label><input type="radio" name="front_pref" value="front_row" checked={frontStudentPlacement === 'front_row'} onChange={e => setFrontStudentPlacement(e.target.value)} /> Front row only</label>
+                                                <label><input type="radio" name="front_pref" value="front_two_rows" checked={frontStudentPlacement === 'front_two_rows'} onChange={e => setFrontStudentPlacement(e.target.value)} /> Front two rows</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
+                                        <div className="mt-2 space-y-2 text-sm ml-4">
+                                            <label className="flex items-center gap-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
+                                        </div>
+                                    </div>
+                                    <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
+                                </> ) : ( <>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div><label>Rows of Tables</label><input type="number" min="1" value={groupRows} onChange={e => setGroupRows(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                        <div><label>Cols of Tables</label><input type="number" min="1" value={groupCols} onChange={e => setGroupCols(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                        <div className="col-span-2"><label>Max Students per Table</label><input type="number" min="1" value={groupSize} onChange={e => setGroupSize(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                      </div>
+                                      <div className="mt-4"><label>Table Numbering</label>
+                                        <select value={tableNumberingOrder} onChange={e => setTableNumberingOrder(e.target.value)} className="mt-1 w-full p-2 border rounded bg-white">
+                                            <option value="lrtb">Left to right, then top to bottom</option>
+                                            <option value="rltb">Right to left, then top to bottom</option>
+                                            <option value="tblr">Top to bottom, then left to right</option>
+                                            <option value="tbrl">Top to bottom, then right to left</option>
+                                        </select>
+                                      </div>
+                                      <div className="mt-4"><label>Tables to keep empty</label>
+                                          <input type="text" value={emptyTablesInput} onChange={e => setEmptyTablesInput(e.target.value)} placeholder="e.g. 3, 8" className="mt-1 w-full p-2 border rounded"/>
+                                      </div>
+                                      <div className="mt-4"><label className="font-semibold text-gray-700">Placement Preferences</label>
+                                        <div className="mt-2 space-y-2 text-sm">
+                                            <p>Tall Students (T):</p>
+                                            <div className="flex flex-col ml-4">
+                                                <label><input type="radio" name="tall_pref_group" value="back_row" checked={tallStudentPlacementGroups === 'back_row'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row of tables</label>
+                                                <label><input type="radio" name="tall_pref_group" value="back_two_rows" checked={tallStudentPlacementGroups === 'back_two_rows'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back two rows of tables</label>
+                                                <label><input type="radio" name="tall_pref_group" value="back_sides" checked={tallStudentPlacementGroups === 'back_sides'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row & side columns of tables</label>
+                                            </div>
+                                            <p className="pt-2">Front Students (F): Prioritized for tables with the lowest numbers.</p>
+                                        </div>
+                                    </div>
+                                      <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
+                                        <div className="mt-2 space-y-2 text-sm ml-4">
+                                            <label className="flex items-center gap-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
+                                        </div>
+                                      </div>
+                                      <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
+                                </> )}
+                            </section>
+                            <section className="sidebar-section">
+                                <h2 className="sidebar-title">Student Input</h2>
+                                <div className="text-xs text-gray-600 mb-2">
+                                    <p>Enter one student per line. Specify gender with ', M' or ', F'.</p>
+                                    <p>Check 'T' for tall students or 'F' for students who need to be at the front.</p>
+                                </div>
+                                <textarea value={massInput} onChange={e => setMassInput(e.target.value)} rows="4" placeholder="e.g.&#10;Alice, F&#10;Bob M&#10;Charlie" className="w-full p-2 border rounded"></textarea>
+                                <button onClick={addStudents} className="w-full mt-2 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Add Student(s)</button>
+                            </section>
+                             <section className="sidebar-section">
+                                <div className="flex justify-between items-center mb-2">
+                                    <h2 className="sidebar-title mb-0 pb-0 border-none">Student List ({students.length})</h2>
+                                    <button onClick={clearAllStudents} className="text-sm font-medium text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed" disabled={students.length === 0}>
+                                        Clear All
+                                    </button>
+                                </div>
+                                <div className="max-h-60 overflow-y-auto pr-2">
+                                    {students.map(s => <StudentListItem key={s.id} student={s} onUpdate={updateStudent} onDelete={deleteStudent} />)}
+                                </div>
+                            </section>
+                            <RuleManager students={students} rules={rules} setRules={setRules} />
+                            <HistoryManager history={history} onRestore={restoreFromHistory} />
+                        </div>
+                    </aside>
+                    <main className="flex-1 p-4 md:p-8 flex flex-col items-center bg-gray-50 min-h-0 min-w-0">
+                        <div className="w-full flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
+                            {/* Left side: View Toggle */}
+                            <div>
+                                <div className="flex gap-2 p-1 bg-gray-200 rounded-lg">
+                                    <button onClick={() => setDisplayView('natural')} className={`py-1 px-3 rounded-md text-sm font-semibold ${displayView === 'natural' ? 'bg-white shadow' : ''}`}>Natural View</button>
+                                    <button onClick={() => setDisplayView('traditional')} className={`py-1 px-3 rounded-md text-sm font-semibold ${displayView === 'traditional' ? 'bg-white shadow' : ''}`}>Traditional View</button>
+                                </div>
+                                <p className="text-xs text-gray-600 mt-2 max-w-xs">
+                                    <b>Natural:</b> Student's view from their seat. <b>Traditional:</b> Teacher's view from the front.
+                                </p>
+                            </div>
+
+                            {/* Right side: Action Buttons & Instructions */}
+                            <div className="flex flex-col items-end">
+                                <p className="text-sm text-gray-600 mb-2 text-right max-w-sm">
+                                   <b>Instructions:</b> You can mark seats as 'Empty', manually assign students, and then click 'Generate Draft Plan' to fill the rest according to the rules you've set.
+                                </p>
+                               <div className="flex gap-2 flex-wrap justify-end">
+                                   <button onClick={generateDraftPlan} className="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">Generate Draft Plan</button>
+                                   <button onClick={resetDraft} className="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Reset Draft</button>
+                                   <button onClick={exportToWord} className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600">Export as .doc</button>
+                               </div>
+                               {errorMessage && <div className="mt-2 text-sm font-semibold text-red-800 text-right">{errorMessage}</div>}
+                            </div>
+                        </div>
+                        <div className={`w-full flex flex-grow overflow-auto justify-center ${displayView === 'traditional' ? 'flex-col-reverse' : 'flex-col'}`}>
+                            <div className="w-full text-center p-4 bg-gray-200 rounded-lg mb-6 font-semibold text-gray-700 shadow-inner shrink-0">
+                                {view === 'traditional' ? "Teacher's Desk" : "Teacher's Bench"}
+                            </div>
+                            <div className="w-full flex-grow overflow-auto flex justify-center px-8 sm:px-12 md:px-16 lg:px-20">
+                                <SeatingGrid displayView={displayView} view={view} rows={committedRows} cols={committedCols} groupRows={committedGroupRows} groupCols={committedGroupCols} groupSize={groupSize} columnGrouping={columnGrouping} tableNumberingOrder={tableNumberingOrder} seats={currentSeats} students={students} onAssign={assignSeat} activeAssigningSeat={activeAssigningSeat} setActiveAssigningSeat={setActiveAssigningSeat} />
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        function RuleManager({ students, rules, setRules }) {
+            const [type, setType] = useState('group');
+            const [selectedStudents, setSelectedStudents] = useState([]);
+            const [groupConditions, setGroupConditions] = useState({ adjacent: true, front_back: false, diagonal: false, in_pair: false });
+            const [distance, setDistance] = useState(2);
+            const [error, setError] = useState("");
+            const hasStudents = students.length > 0;
+
+            const handleStudentSelect = (studentId) => { setSelectedStudents(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]); };
+            const handleAddRule = () => {
+                setError("");
+                if (selectedStudents.length < 2) { 
+                    setError("Please select at least two students for a rule."); 
+                    return; 
+                }
+                if (groupConditions.in_pair && selectedStudents.length !== 2) {
+                    setError("'Sit in a pair' rule requires exactly 2 students to be selected.");
+                    return;
+                }
+                const newRule = { id: `rule-${Date.now()}`, type, studentIds: [...selectedStudents], condition: type === 'group' ? groupConditions : { type: 'apart', value: distance } };
+                setRules(prev => [...prev, newRule]);
+                setSelectedStudents([]);
+            };
+            const deleteRule = (ruleId) => {
+                setRules(prev => prev.filter(r => r.id !== ruleId));
+            };
+            const getStudentName = (id) => students.find(s=>s.id === id)?.name || 'Unknown';
+
+            return (
+                <section className="sidebar-section">
+                    <h2 className="sidebar-title">Grouping & Separation Rules</h2>
+                    <div className={`border-2 border-dashed rounded-lg p-4 ${!hasStudents ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                         <div className="mb-3">
+                            <h3 className={`font-semibold text-sm mb-2 ${!hasStudents ? 'text-gray-400' : ''}`}>1. Select Students</h3>
+                            <div className="max-h-32 overflow-y-auto border rounded bg-white p-2 text-sm">
+                                {hasStudents ? (
+                                    <div className="grid grid-cols-2 gap-1">
+                                        {students.map(s => (
+                                            <label key={s.id} className="flex items-center gap-2 p-1 rounded hover:bg-blue-50">
+                                                <input type="checkbox" checked={selectedStudents.includes(s.id)} onChange={() => handleStudentSelect(s.id)} /> {s.name}
+                                            </label>
+                                        ))}
+                                    </div>
+                                ) : ( <div className="text-center text-gray-500 py-4">Add students to create rules.</div> )}
+                            </div>
+                        </div>
+                        <div className="mb-3">
+                            <h3 className={`font-semibold text-sm mb-2 ${!hasStudents ? 'text-gray-400' : ''}`}>2. Choose Rule Type</h3>
+                            <div className="flex gap-2">
+                                <label className={`flex-1 ${!hasStudents ? 'text-gray-400 cursor-not-allowed' : ''}`}><input type="radio" name="ruleType" disabled={!hasStudents} checked={type==='group'} onChange={() => setType('group')}/> Group Together</label>
+                                <label className={`flex-1 ${!hasStudents ? 'text-gray-400 cursor-not-allowed' : ''}`}><input type="radio" name="ruleType" disabled={!hasStudents} checked={type==='separate'} onChange={() => setType('separate')}/> Separate</label>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className={`font-semibold text-sm mb-2 ${!hasStudents ? 'text-gray-400' : ''}`}>3. Set Condition</h3>
+                            {type === 'group' ? (
+                                <div className="space-y-2 text-sm">
+                                    <label className={`flex items-center gap-2 ${!hasStudents ? 'text-gray-400' : ''}`}><input type="checkbox" disabled={!hasStudents} checked={groupConditions.adjacent} onChange={e => setGroupConditions(prev => ({...prev, adjacent: e.target.checked}))}/>Sit next to each other</label>
+                                    <label className={`flex items-center gap-2 ${!hasStudents ? 'text-gray-400' : ''}`}><input type="checkbox" disabled={!hasStudents} checked={groupConditions.front_back} onChange={e => setGroupConditions(prev => ({...prev, front_back: e.target.checked}))}/>Sit front/back</label>
+                                    <label className={`flex items-center gap-2 ${!hasStudents ? 'text-gray-400' : ''}`}><input type="checkbox" disabled={!hasStudents} checked={groupConditions.diagonal} onChange={e => setGroupConditions(prev => ({...prev, diagonal: e.target.checked}))}/>Sit diagonally</label>
+                                    <label className={`flex items-center gap-2 ${!hasStudents ? 'text-gray-400' : ''}`}><input type="checkbox" disabled={!hasStudents} checked={groupConditions.in_pair} onChange={e => setGroupConditions(prev => ({...prev, in_pair: e.target.checked}))}/>Sit in a pair (2 students only)</label>
+                                </div>
+                            ) : (
+                                <div className={`flex items-center gap-2 text-sm ${!hasStudents ? 'text-gray-400' : ''}`}>Keep at least <input type="number" min="1" value={distance} disabled={!hasStudents} onChange={e => setDistance(Math.max(1, parseInt(e.target.value) || 1))} className="w-16 p-1 border rounded disabled:bg-gray-200" /> seats apart</div>
+                            )}
+                        </div>
+                        {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
+                        <button onClick={handleAddRule} disabled={!hasStudents} className="w-full mt-3 bg-purple-600 text-white py-2 rounded-md text-sm disabled:bg-purple-300 disabled:cursor-not-allowed">Add Rule</button>
+                    </div>
+                    <div className="mt-4">
+                        <h3 className="font-semibold mb-2">Active Rules ({rules.length})</h3>
+                        <div className="max-h-32 overflow-y-auto space-y-2 pr-1">
+                            {rules.map(rule => (
+                                <div key={rule.id} className="bg-gray-100 p-2 rounded text-xs border flex justify-between items-center">
+                                    <div>
+                                        <div className="font-bold">{rule.type.toUpperCase()}: {rule.studentIds.map(getStudentName).join(', ')}</div>
+                                        {rule.type === 'separate' && <div className="text-gray-600 pl-2">Condition: Keep {rule.condition.value} seats apart.</div>}
+                                    </div>
+                                    <button onClick={() => deleteRule(rule.id)} className="text-red-400 hover:text-red-600 p-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3V2h11v1h-11z"/></svg>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            );
+        }
+        
+        function HistoryManager({ history, onRestore }) {
+            const [isExpanded, setIsExpanded] = useState(false);
+            if (history.length === 0) return null;
+            return (
+                <section className="sidebar-section">
+                    <div className="flex justify-between items-center">
+                        <h2 className="sidebar-title mb-0 pb-0 border-none">History ({history.length})</h2>
+                        <button onClick={() => setIsExpanded(prev => !prev)} className="text-sm text-indigo-600 hover:text-indigo-800">
+                            {isExpanded ? 'Collapse' : 'Expand'}
+                        </button>
+                    </div>
+                    {isExpanded && (
+                         <div className="mt-2 max-h-48 overflow-y-auto border rounded p-2 space-y-2">
+                            {[...history].reverse().map((entry, index) => (
+                                <div key={entry.timestamp.toISOString()} className="bg-gray-50 p-2 rounded text-xs border flex justify-between items-center">
+                                    <span>{entry.title}</span>
+                                    <button onClick={() => onRestore(entry)} className="bg-gray-200 px-2 py-1 rounded text-xs hover:bg-gray-300">
+                                        Restore
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            );
+        }
+        
+        function getTableNumber(r, c, order, groupRows, groupCols) {
+            switch (order) {
+                case 'lrtb': return r * groupCols + c + 1;
+                case 'rltb': return r * groupCols + (groupCols - 1 - c) + 1;
+                case 'tblr': return c * groupRows + r + 1;
+                case 'tbrl': return (groupCols - 1 - c) * groupRows + r + 1;
+                default: return 0;
+            }
+        }
+
+        function SeatingGrid({ view, displayView, rows, cols, groupRows, groupCols, groupSize, columnGrouping, tableNumberingOrder, seats, students, onAssign, activeAssigningSeat, setActiveAssigningSeat }) {
+            const studentMap = useMemo(() => new Map(students.map(s => [s.id, s])), [students]);
+            const availableStudents = useMemo(() => { const assignedIds = new Set(Object.values(seats)); return students.filter(s => !assignedIds.has(s.id) && s.id !== EMPTY_SEAT_ID); }, [students, seats]);
+
+            if (view === 'traditional') {
+                if (rows === 0 || cols === 0) return null;
+                
+                const rowIndices = Array.from({ length: rows }, (_, i) => i);
+                if(displayView === 'traditional') rowIndices.reverse();
+                
+                const columnChunks = [];
+                const colsArray = Array.from({ length: cols }, (_, i) => i);
+                if(displayView === 'traditional') colsArray.reverse();
+
+                for (let i = 0; i < cols; i += columnGrouping) {
+                    columnChunks.push(colsArray.slice(i, i + columnGrouping));
+                }
+
+                return (
+                    <div className="flex flex-col gap-4">
+                    {rowIndices.map((r, rowIndex) => (
+                        <div key={rowIndex} className="flex justify-center gap-10">
+                            {columnChunks.map((chunk, chunkIndex) => (
+                                <div key={chunkIndex} className="flex gap-4">
+                                    {chunk.map(c => ( <Seat key={`${r}-${c}`} r={r} c={c} seats={seats} studentMap={studentMap} onAssign={onAssign} activeAssigningSeat={activeAssigningSeat} setActiveAssigningSeat={setActiveAssigningSeat} availableStudents={availableStudents} view={view} /> ))}
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                    </div>
+                );
+            }
+            if (view === 'groups') {
+                if (groupRows === 0 || groupCols === 0) return null;
+                
+                const rowIndices = Array.from({length: groupRows}, (_, i) => i);
+                if(displayView === 'traditional') rowIndices.reverse();
+                const colIndices = Array.from({length: groupCols}, (_, i) => i);
+                if(displayView === 'traditional') colIndices.reverse();
+
+                return (
+                    <div className={`inline-grid gap-x-8 gap-y-12 p-4 justify-items-center`} style={{ gridTemplateColumns: `repeat(${groupCols}, minmax(0, 1fr))` }}>
+                        {rowIndices.flatMap((r, rowIndex) =>
+                            colIndices.map((c, colIndex) => {
+                                const groupId = r * groupCols + c;
+                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, groupRows, groupCols);
+                                return (
+                                    <div key={groupId} className="relative bg-white p-4 pt-8 rounded-xl shadow-lg border w-fit">
+                                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-sm font-bold rounded-full px-3 py-1">Table {tableNumber}</div>
+                                        <div className={`grid gap-2 grid-cols-${Math.ceil(groupSize / 2)}`}>
+                                            {Array.from({ length: groupSize }, (_, seatIndex) => {
+                                                const seatR = groupId; const seatC = seatIndex;
+                                                return <Seat key={`${seatR}-${seatC}`} r={seatR} c={seatC} seats={seats} studentMap={studentMap} onAssign={onAssign} activeAssigningSeat={activeAssigningSeat} setActiveAssigningSeat={setActiveAssigningSeat} availableStudents={availableStudents} view={view} />
+                                            })}
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        )}
+                    </div>
+                );
+            }
+            return null;
+        }
+
+        function Seat({ r, c, seats, studentMap, onAssign, activeAssigningSeat, setActiveAssigningSeat, availableStudents, view }) {
+             const seatKey = `${r}-${c}`;
+             const studentId = seats[seatKey];
+             const student = studentId ? studentMap.get(studentId) : null;
+             const isAssigning = activeAssigningSeat === seatKey;
+             const isEmpty = studentId === EMPTY_SEAT_ID;
+             
+             const handleClick = () => {
+                 if (studentId && studentId !== EMPTY_SEAT_ID && !isAssigning) {
+                     onAssign(r, c, null);
+                 } else {
+                     setActiveAssigningSeat(seatKey);
+                 }
+             };
+
+             const seatLabel = view === 'traditional' ? `R${r + 1}, C${c + 1}` : `S${c + 1}`;
+             const borderColor = 'border-gray-300';
+             const seatClasses = `relative w-28 h-24 rounded-xl shadow-md border-2 ${borderColor} flex flex-col items-center justify-center cursor-pointer ${isEmpty ? 'seat-empty' : 'bg-white'}`;
+
+             return (
+                 <div className={seatClasses} onClick={handleClick}>
+                    <span className="absolute top-1 right-2 text-xs font-mono text-gray-500">{seatLabel}</span>
+                    {student ? <span className="font-bold text-sm text-center px-1">{student.name}</span> : isEmpty ? <span className="text-gray-600 font-semibold text-sm">Empty</span> : <span className="text-gray-400">Assign</span>}
+                    {isAssigning && (
+                    <div className="absolute inset-0 bg-white p-2 rounded-xl shadow-2xl z-20 flex flex-col justify-center gap-2 border-2 border-blue-500" onClick={e => e.stopPropagation()}>
+                        <h4 className="font-bold text-xs text-center">Assign to {seatLabel}</h4>
+                        <select defaultValue={studentId || ""} onChange={(e) => onAssign(r, c, e.target.value || null)} className="w-full p-1 border rounded text-xs">
+                            <option value="">-- Unassign --</option>
+                            <option disabled>-----</option>
+                            {student && !availableStudents.find(s=>s.id === student.id) && <option value={student.id}>{student.name}</option>}
+                            {availableStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            <option disabled>──────────</option>
+                            <option value={EMPTY_SEAT_ID}>-- Mark as Empty --</option>
+                        </select>
+                        <button onClick={() => setActiveAssigningSeat(null)} className="text-xs self-center mt-1">Cancel</button>
+                    </div>
+                    )}
+                 </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SeatingPlanner />);
+    </script>
+</body>
+</html>
+
