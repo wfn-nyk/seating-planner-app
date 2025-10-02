@@ -16,12 +16,8 @@
         .seat-empty { background-color: #e5e7eb; background-image: repeating-linear-gradient(45deg, #d1d5db 25%, transparent 25%, transparent 75%, #d1d5db 75%, #d1d5db), repeating-linear-gradient(45deg, #d1d5db 25%, #e5e7eb 25%, #e5e7eb 75%, #d1d5db 75%, #d1d5db); background-position: 0 0, 5px 5px; background-size: 10px 10px; }
     </style>
 </head>
-<body class="bg-gray-100 flex flex-col min-h-screen">
-    <div id="root" class="flex-grow"></div>
-
-    <footer class="text-center text-xs text-gray-500 py-4">
-        NYK 2025 :D
-    </footer>
+    <body class="bg-gray-100">
+    <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useCallback, useMemo } = React;
@@ -555,6 +551,9 @@
                             <RuleManager students={students} rules={rules} setRules={setRules} />
                             <HistoryManager history={history} onRestore={restoreFromHistory} />
                         </div>
+                        <div className="mt-auto pt-4 text-center text-xs text-gray-400">
+                    Nyk2025:D
+                    </div>
                     </aside>
                     <main className="flex-1 p-4 md:p-8 flex flex-col items-center bg-gray-50 min-h-0 min-w-0">
                         <div className="w-full flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
@@ -832,6 +831,7 @@
     </script>
 </body>
 </html>
+
 
 
 
