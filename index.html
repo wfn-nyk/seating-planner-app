@@ -16,13 +16,13 @@
         .seat-empty { background-color: #e5e7eb; background-image: repeating-linear-gradient(45deg, #d1d5db 25%, transparent 25%, transparent 75%, #d1d5db 75%, #d1d5db), repeating-linear-gradient(45deg, #d1d5db 25%, #e5e7eb 25%, #e5e7eb 75%, #d1d5db 75%, #d1d5db); background-position: 0 0, 5px 5px; background-size: 10px 10px; }
     </style>
 </head>
-    <body class="bg-gray-100">
+<body class="bg-gray-100">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useCallback, useMemo } = React;
 
-        const LOCAL_STORAGE_KEY = 'seatingPlannerData_v33_STABLE'; // Incremented version
+        const LOCAL_STORAGE_KEY = 'seatingPlannerData_v37_STABLE'; // Incremented version
         const EMPTY_SEAT_ID = '__EMPTY__';
 
         // --- Helper Components ---
@@ -71,7 +71,9 @@
             const [frontStudentPlacement, setFrontStudentPlacement] = useState('front_row');
             const [tallStudentPlacementGroups, setTallStudentPlacementGroups] = useState('back_row');
             const [prioritizeSameSex, setPrioritizeSameSex] = useState(false);
+            const [fillFrontFirst, setFillFrontFirst] = useState(false);
             const [emptyTablesInput, setEmptyTablesInput] = useState("");
+            const [groupExportFormat, setGroupExportFormat] = useState('list');
             
             // Student, Seat, and Rule State
             const [students, setStudents] = useState([]);
@@ -84,6 +86,8 @@
             const [isLoading, setIsLoading] = useState(true);
             const [activeAssigningSeat, setActiveAssigningSeat] = useState(null);
             const [errorMessage, setErrorMessage] = useState("");
+            const [groupingListInput, setGroupingListInput] = useState("");
+
 
             // --- Data Persistence ---
             useEffect(() => {
@@ -107,7 +111,9 @@
                         setFrontStudentPlacement(data.frontStudentPlacement || 'front_row');
                         setTallStudentPlacementGroups(data.tallStudentPlacementGroups || 'back_row');
                         setPrioritizeSameSex(data.prioritizeSameSex || false);
+                        setFillFrontFirst(data.fillFrontFirst || false);
                         setEmptyTablesInput(data.emptyTablesInput || "");
+                        setGroupExportFormat(data.groupExportFormat || 'list');
                         setView(data.view || 'traditional'); setRules(data.rules || []);
                     }
                 } catch (error) { console.error("Failed to load data from localStorage", error); }
@@ -116,10 +122,10 @@
 
             useEffect(() => {
                 if (!isLoading) {
-                    const dataToSave = JSON.stringify({ planTitle, students, classSeats, groupSeats, manuallyAssignedSeats: [...manuallyAssignedSeats], rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, emptyTablesInput });
+                    const dataToSave = JSON.stringify({ planTitle, students, classSeats, groupSeats, manuallyAssignedSeats: [...manuallyAssignedSeats], rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, fillFrontFirst, groupExportFormat, emptyTablesInput });
                     localStorage.setItem(LOCAL_STORAGE_KEY, dataToSave);
                 }
-            }, [planTitle, students, classSeats, groupSeats, manuallyAssignedSeats, rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, emptyTablesInput]);
+            }, [planTitle, students, classSeats, groupSeats, manuallyAssignedSeats, rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, fillFrontFirst, groupExportFormat, emptyTablesInput]);
 
             const currentSeats = view === 'traditional' ? classSeats : groupSeats;
             const setCurrentSeats = view === 'traditional' ? setClassSeats : setGroupSeats;
@@ -130,21 +136,38 @@
             }, [rows, cols, groupRows, groupCols, groupSize, view]);
 
             const addStudents = () => {
+                const existingNames = new Set(students.map(s => s.name));
+
                 const newStudents = massInput.split('\n').map(line => line.trim()).filter(line => line)
                     .map(line => {
                         const parts = line.split(/[\t,]/).map(p => p.trim());
-                        const name = parts[0];
+                        let name = parts[0];
+                        if (!name) return null;
+
                         let gender = 'unspecified';
                         if (parts.length > 1) {
                             const genderHint = parts[1].toLowerCase();
                             if (genderHint === 'm' || genderHint === 'male') gender = 'male';
                             else if (genderHint === 'f' || genderHint === 'female') gender = 'female';
                         }
-                        return { id: `student-${Date.now()}-${Math.random()}`, name, gender, isTall: false, isFront: false };
-                    });
+
+                        let finalName = name;
+                        if (existingNames.has(finalName)) {
+                            let counter = 2;
+                            while (existingNames.has(`${name} (${counter})`)) {
+                                counter++;
+                            }
+                            finalName = `${name} (${counter})`;
+                        }
+                        existingNames.add(finalName); // Add to set to handle duplicates within the same batch
+
+                        return { id: `student-${Date.now()}-${Math.random()}`, name: finalName, gender, isTall: false, isFront: false };
+                    }).filter(Boolean); // Filter out any null entries from empty lines
+
                 setStudents(current => [...current, ...newStudents]);
                 setMassInput("");
             };
+
 
             const clearAllStudents = () => {
                 setStudents([]);
@@ -166,6 +189,105 @@
                 setStudents(prev => prev.filter(s => s.id !== studentId)); 
             };
             
+            const handleImportGrouping = () => {
+                setErrorMessage("");
+                const newGroupSeats = {};
+                const newRules = [];
+                const lines = groupingListInput.split('\n').filter(line => line.trim() !== '');
+                let newStudentsToAdd = [];
+                const existingNames = new Set(students.map(s => s.name));
+                const currentStudentMap = new Map(students.map(s => [s.name.toLowerCase().trim(), s]));
+
+                // First Pass: Parse lines, find/create students, and prepare rules.
+                lines.forEach(line => {
+                    const isDirectPlacement = line.includes(':');
+                    const nameStr = isDirectPlacement ? line.split(':')[1] : line;
+                    const studentNames = nameStr.split(',').map(name => name.trim()).filter(Boolean);
+
+                    if (studentNames.length === 0) return;
+
+                    const studentsForRule = [];
+
+                    studentNames.forEach(name => {
+                        const lowerCaseName = name.toLowerCase();
+                        if (currentStudentMap.has(lowerCaseName)) {
+                            studentsForRule.push(currentStudentMap.get(lowerCaseName));
+                        } else {
+                            let finalName = name;
+                            if (existingNames.has(finalName)) {
+                                let counter = 2;
+                                while (existingNames.has(`${name} (${counter})`)) {
+                                    counter++;
+                                }
+                                finalName = `${name} (${counter})`;
+                            }
+                            
+                            const newStudent = {
+                                id: `student-${Date.now()}-${Math.random()}`,
+                                name: finalName,
+                                gender: 'unspecified',
+                                isTall: false,
+                                isFront: false
+                            };
+                            newStudentsToAdd.push(newStudent);
+                            existingNames.add(finalName); // Add to set to track for this import batch
+                            currentStudentMap.set(lowerCaseName, newStudent); // Add to map for this batch
+                            studentsForRule.push(newStudent);
+                        }
+                    });
+
+                    const finalStudentIdsForRule = studentsForRule.map(s => s.id);
+
+                    if (finalStudentIdsForRule.length > 1) {
+                        const newRule = {
+                            id: `rule-${Date.now()}-${Math.random()}`,
+                            type: 'group',
+                            studentIds: finalStudentIdsForRule,
+                            condition: { adjacent: true, in_pair: finalStudentIdsForRule.length === 2 }
+                        };
+                        newRules.push(newRule);
+                    }
+
+                    if (isDirectPlacement) {
+                        const tableIndexMatch = line.split(':')[0].match(/\d+/);
+                        if (!tableIndexMatch) return;
+                        const tableNum = parseInt(tableIndexMatch[0], 10);
+                        let targetGroupId = -1;
+
+                        for (let r = 0; r < committedGroupRows; r++) {
+                            for (let c = 0; c < committedGroupCols; c++) {
+                                if (getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols) === tableNum) {
+                                    targetGroupId = r * committedGroupCols + c;
+                                    break;
+                                }
+                            }
+                            if (targetGroupId !== -1) break;
+                        }
+
+                        if (targetGroupId !== -1) {
+                            finalStudentIdsForRule.forEach((id, seatIdx) => {
+                                if (seatIdx < groupSize) {
+                                    newGroupSeats[`${targetGroupId}-${seatIdx}`] = id;
+                                }
+                            });
+                        }
+                    }
+                });
+
+                // Update state
+                if (newStudentsToAdd.length > 0) {
+                    setStudents(prev => [...prev, ...newStudentsToAdd]);
+                }
+                if (newRules.length > 0) {
+                    setRules(prev => [...prev, ...newRules]);
+                }
+                if (Object.keys(newGroupSeats).length > 0) {
+                    setGroupSeats(prev => ({ ...prev, ...newGroupSeats }));
+                }
+                
+                setGroupingListInput("");
+            };
+
             const assignSeat = (r, c, studentId) => {
                 const key = `${r}-${c}`;
                 setCurrentSeats(prev => {
@@ -308,6 +430,10 @@
                             if (tallStudentPlacement === 'back_sides') return r === committedRows - 1 || c === 0 || c === committedCols - 1;
                             return false;
                         });
+                        
+                        if (fillFrontFirst) {
+                            availableSeatCoords.sort((a, b) => a.r - b.r || a.c - b.c);
+                        }
 
                         if(prioritizeSameSex) {
                             let maleStudents = unassignedStudents.filter(s => s.gender === 'male');
@@ -315,19 +441,26 @@
                             const otherStudents = unassignedStudents.filter(s => s.gender !== 'male' && s.gender !== 'female');
                             const seatPairs = [];
                             const singleSeats = new Set(availableSeatCoords.map(s => s.key));
+                             // Use sorted availableSeatCoords if fillFrontFirst is true
+                            const coordsToPair = fillFrontFirst ? [...availableSeatCoords] : shuffle([...availableSeatCoords]);
+                            const pairedKeys = new Set();
 
-                            for (const r of Array.from({length: committedRows}, (_, i) => i)) {
-                                for (let c = 0; c < committedCols; c += columnGrouping) {
-                                    if (c + 1 < committedCols) {
-                                        const key1 = `${r}-${c}`; const key2 = `${r}-${c + 1}`;
-                                        if (singleSeats.has(key1) && singleSeats.has(key2)) {
-                                            seatPairs.push([key1, key2]);
-                                            singleSeats.delete(key1); singleSeats.delete(key2);
-                                        }
+                            for (const seat1 of coordsToPair) {
+                                if (pairedKeys.has(seat1.key)) continue;
+                                const cIndex = seat1.c;
+                                if ((cIndex % columnGrouping) === 0) {
+                                    const partnerKey = `${seat1.r}-${cIndex + 1}`;
+                                    if (singleSeats.has(partnerKey)) {
+                                        seatPairs.push([seat1.key, partnerKey]);
+                                        pairedKeys.add(seat1.key);
+                                        pairedKeys.add(partnerKey);
+                                        singleSeats.delete(seat1.key);
+                                        singleSeats.delete(partnerKey);
                                     }
                                 }
                             }
-                            shuffle(seatPairs); shuffle(maleStudents); shuffle(femaleStudents);
+                            
+                            shuffle(maleStudents); shuffle(femaleStudents);
 
                             while (maleStudents.length >= 2 && seatPairs.length > 0) { const pair = seatPairs.pop(); newAssignments[pair[0]] = maleStudents.pop().id; newAssignments[pair[1]] = maleStudents.pop().id; }
                             while (femaleStudents.length >= 2 && seatPairs.length > 0) { const pair = seatPairs.pop(); newAssignments[pair[0]] = femaleStudents.pop().id; newAssignments[pair[1]] = femaleStudents.pop().id; }
@@ -338,18 +471,113 @@
                             
                             remainingStudents.forEach((student, i) => { if (remainingSeatKeys[i]) { newAssignments[remainingSeatKeys[i]] = student.id; }});
                         } else {
+                            const finalSeats = fillFrontFirst ? availableSeatCoords : shuffle([...availableSeatCoords]);
                             shuffle(unassignedStudents).forEach(student => {
-                                for (const seat of shuffle([...availableSeatCoords])) {
+                                for (let i = 0; i < finalSeats.length; i++) {
+                                    const seat = finalSeats[i];
                                     if (isPlacementValid(student.id, seat, newAssignments)) {
                                         newAssignments[seat.key] = student.id;
-                                        availableSeatCoords = availableSeatCoords.filter(s => s.key !== seat.key);
+                                        finalSeats.splice(i, 1);
                                         break;
                                     }
                                 }
                             });
                         }
                     } else { // Groups view
-                         // Group View Logic Here...
+                        const emptyTableNumbers = emptyTablesInput.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n));
+                        const allTables = [];
+                        for (let r = 0; r < committedGroupRows; r++) { for (let c = 0; c < committedGroupCols; c++) { allTables.push({ r, c, tableNumber: getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols) }); } }
+                        
+                        const availableTables = allTables.filter(t => !emptyTableNumbers.includes(t.tableNumber)).sort((a, b) => a.tableNumber - b.tableNumber);
+                        
+                        let availableSlots = [];
+                        availableTables.forEach(({r, c}) => {
+                            const groupId = r * committedGroupCols + c;
+                            for (let seatIndex = 0; seatIndex < groupSize; seatIndex++) {
+                                const key = `${groupId}-${seatIndex}`;
+                                if (!newAssignments[key]) availableSlots.push({ key, tableNumber: getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols), tableR: r, tableC: c });
+                            }
+                        });
+
+                        if (unassignedStudents.length > availableSlots.length) { setErrorMessage(`Not enough seats (${availableSlots.length}) for students (${unassignedStudents.length}).`); return; }
+                        
+                        for (const rule of groupRules) {
+                             const studentsToGroup = rule.studentIds.filter(id => !assignedStudentIds.has(id));
+                             if (studentsToGroup.length < 2) continue;
+
+                             const slotsByTable = availableSlots.reduce((acc, slot) => {
+                                 if (!acc[slot.tableNumber]) acc[slot.tableNumber] = [];
+                                 acc[slot.tableNumber].push(slot); return acc;
+                             }, {});
+
+                             let placedGroup = false;
+                             for (const tableNum of shuffle(Object.keys(slotsByTable))) {
+                                 if (slotsByTable[tableNum].length >= studentsToGroup.length) {
+                                     const slotsToTake = slotsByTable[tableNum].slice(0, studentsToGroup.length);
+                                     slotsToTake.forEach((slot, i) => { newAssignments[slot.key] = studentsToGroup[i]; });
+                                     unassignedStudents = unassignedStudents.filter(s => !studentsToGroup.includes(s.id));
+                                     availableSlots = availableSlots.filter(s => !slotsToTake.find(ts => ts.key === s.key));
+                                     studentsToGroup.forEach(id => assignedStudentIds.add(id));
+                                     placedGroup = true;
+                                     break;
+                                 }
+                             }
+                             if (!placedGroup) { setErrorMessage(`Could not find an empty table for group: ${studentsToGroup.map(getStudentName).join(', ')}`); return; }
+                        }
+
+                        const placeGroupStudents = (studentList, slotFilter) => {
+                            let studentsToPlace = shuffle([...studentList]);
+                            let slotsForPlacing = shuffle(availableSlots.filter(slotFilter));
+                            while(studentsToPlace.length > 0 && slotsForPlacing.length > 0) {
+                                const student = studentsToPlace.pop();
+                                const slot = slotsForPlacing.pop();
+                                newAssignments[slot.key] = student.id;
+                                unassignedStudents = unassignedStudents.filter(s => s.id !== student.id);
+                                availableSlots = availableSlots.filter(s => s.key !== slot.key);
+                            }
+                        };
+                        const frontTableNumbers = availableTables.slice(0, Math.ceil(availableTables.length / 3)).map(t => t.tableNumber);
+                        placeGroupStudents(unassignedStudents.filter(s => s.isFront), (slot) => frontTableNumbers.includes(slot.tableNumber));
+                        placeGroupStudents(unassignedStudents.filter(s => s.isTall), (slot) => {
+                            const r = slot.tableR; const c = slot.tableC;
+                            switch(tallStudentPlacementGroups) {
+                                case 'back_row': return r === committedGroupRows - 1;
+                                case 'back_two_rows': return r >= committedGroupRows - 2;
+                                case 'back_sides': return r === committedGroupRows - 1 || c === 0 || c === committedGroupCols - 1;
+                                default: return r === committedGroupRows - 1;
+                            }
+                        });
+
+                        let remainingStudents = shuffle([...unassignedStudents]);
+                        if (fillFrontFirst) {
+                            availableSlots.sort((a,b) => a.tableNumber - b.tableNumber);
+                            remainingStudents.forEach((student, i) => {
+                                if (availableSlots[i]) {
+                                    newAssignments[availableSlots[i].key] = student.id;
+                                }
+                            });
+                        } else {
+                            // original round-robin logic
+                            const finalSlotsByTable = availableSlots.reduce((acc, slot) => {
+                                if (!acc[slot.tableNumber]) acc[slot.tableNumber] = [];
+                                acc[slot.tableNumber].push(slot); return acc;
+                            }, {});
+                            const finalAvailableTableNumbers = Object.keys(finalSlotsByTable).map(Number).sort((a,b) => a-b);
+                            if (finalAvailableTableNumbers.length > 0) {
+                                let studentIdx = 0; let tableRoundRobinIdx = 0;
+                                while(studentIdx < remainingStudents.length) {
+                                    const tableNum = finalAvailableTableNumbers[tableRoundRobinIdx % finalAvailableTableNumbers.length];
+                                    const slotsForTable = finalSlotsByTable[tableNum];
+                                    if (slotsForTable && slotsForTable.length > 0) {
+                                        const slot = slotsForTable.shift();
+                                        newAssignments[slot.key] = remainingStudents[studentIdx].id;
+                                        studentIdx++;
+                                    }
+                                    tableRoundRobinIdx++;
+                                    if (tableRoundRobinIdx > remainingStudents.length * 3 && finalAvailableTableNumbers.length > 1) break; // Failsafe
+                                }
+                            }
+                        }
                     }
                     setCurrentSeats(newAssignments);
                 } catch(error) {
@@ -398,35 +626,67 @@
                         content += '</tr>';
                     }
                     content += '</table>';
-                } else {
-                     content += '<table style="width: 100%; border-collapse: separate; border-spacing: 25px;">';
-                     for (let r = 0; r < committedGroupRows; r++) {
-                        content += '<tr>';
-                        for (let c = 0; c < committedGroupCols; c++) {
-                            content += '<td style="vertical-align: top; text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">';
-                            const groupId = r * committedGroupCols + c;
-                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
-                            content += `<h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14pt;">Table ${tableNumber}</h3>`;
-                            content += '<ul style="list-style-type: none; margin: 0; padding: 0; text-align: left;">';
-                            let hasStudents = false;
-                            for (let i = 0; i < groupSize; i++) {
-                                const studentId = seatsToExport[`${groupId}-${i}`];
-                                if (studentId) {
-                                    hasStudents = true;
-                                    const studentName = studentId === EMPTY_SEAT_ID ? '<em>(Empty Seat)</em>' : studentMap.get(studentId) || '...';
-                                    content += `<li style="padding: 4px; border-bottom: 1px solid #eee;">${studentName}</li>`;
+                } else { // Groups view export
+                    if (groupExportFormat === 'visual') {
+                         content += '<table style="width: 100%; border-collapse: separate; border-spacing: 15px;">';
+                         for (let r = 0; r < committedGroupRows; r++) {
+                            content += '<tr>';
+                            for (let c = 0; c < committedGroupCols; c++) {
+                                content += '<td style="vertical-align: top; text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">';
+                                const groupId = r * committedGroupCols + c;
+                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                
+                                content += `<h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14pt;">Table ${tableNumber}</h3>`;
+                                content += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px;">';
+                                
+                                const numSeatRows = Math.ceil(groupSize / 2);
+                                for(let seatRow = 0; seatRow < numSeatRows; seatRow++) {
+                                    content += '<tr>';
+                                    for(let seatCol = 0; seatCol < 2; seatCol++) {
+                                        const seatIndex = seatRow * 2 + seatCol;
+                                        if (seatIndex < groupSize) {
+                                            const studentId = seatsToExport[`${groupId}-${seatIndex}`];
+                                            const studentName = studentId === EMPTY_SEAT_ID ? '(Empty)' : studentMap.get(studentId) || '...';
+                                            content += `<td style="border: 1px solid #ccc; padding: 8px; text-align: center; height: 40px;">${studentName}</td>`;
+                                        }
+                                    }
+                                    content += '</tr>';
                                 }
+                                content += '</table></td>';
                             }
-                            if (!hasStudents) {
-                                for (let i = 0; i < groupSize; i++) {
-                                    if (!seatsToExport[`${groupId}-${i}`]) content += `<li style="padding: 4px; border-bottom: 1px solid #eee; color: #9ca3af;">(available)</li>`;
-                                }
-                            }
-                            content += '</ul></td>';
+                            content += '</tr>';
                         }
-                        content += '</tr>';
+                        content += '</table>';
+                    } else { // 'list' format for groups
+                         content += '<table style="width: 100%; border-collapse: separate; border-spacing: 25px;">';
+                         for (let r = 0; r < committedGroupRows; r++) {
+                            content += '<tr>';
+                            for (let c = 0; c < committedGroupCols; c++) {
+                                content += '<td style="vertical-align: top; text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">';
+                                const groupId = r * committedGroupCols + c;
+                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                content += `<h3 style="margin-top: 0; margin-bottom: 10px; font-size: 14pt;">Table ${tableNumber}</h3>`;
+                                content += '<ul style="list-style-type: none; margin: 0; padding: 0; text-align: left;">';
+                                let hasStudents = false;
+                                for (let i = 0; i < groupSize; i++) {
+                                    const studentId = seatsToExport[`${groupId}-${i}`];
+                                    if (studentId) {
+                                        hasStudents = true;
+                                        const studentName = studentId === EMPTY_SEAT_ID ? '<em>(Empty Seat)</em>' : studentMap.get(studentId) || '...';
+                                        content += `<li style="padding: 4px; border-bottom: 1px solid #eee;">${studentName}</li>`;
+                                    }
+                                }
+                                if (!hasStudents) {
+                                    for (let i = 0; i < groupSize; i++) {
+                                        if (!seatsToExport[`${groupId}-${i}`]) content += `<li style="padding: 4px; border-bottom: 1px solid #eee; color: #9ca3af;">(available)</li>`;
+                                    }
+                                }
+                                content += '</ul></td>';
+                            }
+                            content += '</tr>';
+                        }
+                        content += '</table>';
                     }
-                    content += '</table>';
                 }
                 if(displayView === 'traditional') content += teacherDesk;
 
@@ -489,6 +749,7 @@
                                     <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
                                         <div className="mt-2 space-y-2 text-sm ml-4">
                                             <label className="flex items-center gap-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
+                                            <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front seats first</label>
                                         </div>
                                     </div>
                                     <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
@@ -523,6 +784,13 @@
                                       <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
                                         <div className="mt-2 space-y-2 text-sm ml-4">
                                             <label className="flex items-center gap-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
+                                            <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front tables first</label>
+                                        </div>
+                                      </div>
+                                      <div className="mt-4"><label className="font-semibold text-gray-700">Export Format</label>
+                                        <div className="flex flex-col ml-4 text-sm mt-2">
+                                            <label><input type="radio" name="group_export" value="list" checked={groupExportFormat === 'list'} onChange={e => setGroupExportFormat(e.target.value)} /> Export as List</label>
+                                            <label><input type="radio" name="group_export" value="visual" checked={groupExportFormat === 'visual'} onChange={e => setGroupExportFormat(e.target.value)} /> Export as Visual Layout</label>
                                         </div>
                                       </div>
                                       <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
@@ -536,6 +804,21 @@
                                 </div>
                                 <textarea value={massInput} onChange={e => setMassInput(e.target.value)} rows="4" placeholder="e.g.&#10;Alice, F&#10;Bob M&#10;Charlie" className="w-full p-2 border rounded"></textarea>
                                 <button onClick={addStudents} className="w-full mt-2 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Add Student(s)</button>
+                                
+                                {view === 'groups' && (
+                                    <div className="mt-4 pt-4 border-t">
+                                        <h3 className="font-semibold text-gray-700">Or, Import Grouping List</h3>
+                                        <p className="text-xs text-gray-500 mt-1 mb-2">Paste your list below to assign students directly to tables. This will override the current group plan.</p>
+                                        <textarea 
+                                            value={groupingListInput} 
+                                            onChange={e => setGroupingListInput(e.target.value)} 
+                                            rows="5" 
+                                            placeholder="Group 1: Alice, Bob, Charlie&#10;Group 2: David, Eve, Frank" 
+                                            className="w-full p-2 border rounded text-sm"
+                                        ></textarea>
+                                        <button onClick={handleImportGrouping} className="w-full mt-2 bg-teal-600 text-white py-2 rounded-md hover:bg-teal-700">Apply Grouping</button>
+                                    </div>
+                                )}
                             </section>
                              <section className="sidebar-section">
                                 <div className="flex justify-between items-center mb-2">
@@ -552,8 +835,8 @@
                             <HistoryManager history={history} onRestore={restoreFromHistory} />
                         </div>
                         <div className="mt-auto pt-4 text-center text-xs text-gray-400">
-                    Nyk2025:D
-                    </div>
+                         Nyk2025:D
+                        </div>
                     </aside>
                     <main className="flex-1 p-4 md:p-8 flex flex-col items-center bg-gray-50 min-h-0 min-w-0">
                         <div className="w-full flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
@@ -575,7 +858,8 @@
                                 </p>
                                <div className="flex gap-2 flex-wrap justify-end">
                                    <button onClick={generateDraftPlan} className="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">Generate Draft Plan</button>
-                                   <button onClick={resetDraft} className="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Reset Draft</button>
+                                   <button onClick={() => { setGroupSeats({}); setClassSeats({});}} className="bg-yellow-500 text-white py-2 px-4 rounded-md hover:bg-yellow-600">Clear All Seats</button>
+                                   <button onClick={resetDraft} className="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Reset Auto-Filled</button>
                                    <button onClick={exportToWord} className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600">Export as .doc</button>
                                </div>
                                {errorMessage && <div className="mt-2 text-sm font-semibold text-red-800 text-right">{errorMessage}</div>}
@@ -831,8 +1115,4 @@
     </script>
 </body>
 </html>
-
-
-
-
 
