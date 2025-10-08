@@ -67,7 +67,7 @@
             const [groupRows, setGroupRows] = useState(3); const [groupCols, setGroupCols] = useState(3);
             const [committedGroupRows, setCommittedGroupRows] = useState(2); const [committedGroupCols, setCommittedGroupCols] = useState(3);
             const [groupSize, setGroupSize] = useState(4); const [columnGrouping, setColumnGrouping] = useState(2);
-            const [tableNumberingOrder, setTableNumberingOrder] = useState('lrtb');
+            const [tableNumberingOrder, setTableNumberingOrder] = useState('tblr');
             const [view, setView] = useState('traditional');
             const [displayView, setDisplayView] = useState('natural');
             const [tallStudentPlacement, setTallStudentPlacement] = useState('back_row');
@@ -76,7 +76,7 @@
             const [prioritizeSameSex, setPrioritizeSameSex] = useState(false);
             const [fillFrontFirst, setFillFrontFirst] = useState(false);
             const [emptyTablesInput, setEmptyTablesInput] = useState("");
-            const [groupExportFormat, setGroupExportFormat] = useState('list');
+            const [groupExportFormat, setGroupExportFormat] = useState('visual');
             const [groupingStrategy, setGroupingStrategy] = useState('random');
             
             // Student, Seat, and Rule State
@@ -713,5 +713,6 @@
     </script>
 </body>
 </html>
+
 
 
