@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seating Planner bot :) </title>
+    <title>Seating planner bot :) </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -322,74 +322,268 @@
             const generateDraftPlan = () => {
                 setErrorMessage(""); // Clear previous errors
 
-                const availableSeats = [];
                 const currentManualSeats = {};
-
-                // 1. Determine all available seat keys and extract manual assignments
-                const maxSeats = potentialSeats;
-                let numSeats = 0;
-                let totalSeatsToGenerate = 0;
-
+                
+                // 1. Identify unassigned students
+                const manuallyAssignedStudentIds = new Set();
                 if (view === 'traditional') {
                     for (let r = 0; r < committedRows; r++) {
                         for (let c = 0; c < committedCols; c++) {
                             const key = `${r}-${c}`;
                             if (manuallyAssignedSeats.has(key) && classSeats[key]) {
                                 currentManualSeats[key] = classSeats[key];
-                            } else if (classSeats[key] !== EMPTY_SEAT_ID) {
-                                availableSeats.push(key);
+                                manuallyAssignedStudentIds.add(classSeats[key]);
                             }
-                            numSeats++;
                         }
                     }
-                } else { // groups view
-                     const emptyTables = emptyTablesInput.split(',').map(t => parseInt(t.trim())).filter(n => n > 0);
+                } else {
                      for (let r = 0; r < committedGroupRows; r++) {
                         for (let c = 0; c < committedGroupCols; c++) {
-                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
                             const groupId = r * committedGroupCols + c;
-                            if (emptyTables.includes(tableNumber)) continue;
-                            
                             for (let s = 0; s < groupSize; s++) {
                                 const key = `${groupId}-${s}`;
                                 if (manuallyAssignedSeats.has(key) && groupSeats[key]) {
                                     currentManualSeats[key] = groupSeats[key];
-                                } else if (groupSeats[key] !== EMPTY_SEAT_ID) {
-                                    availableSeats.push(key);
+                                    manuallyAssignedStudentIds.add(groupSeats[key]);
                                 }
-                                numSeats++;
                             }
                         }
                     }
                 }
-
-                if (numSeats === 0) {
-                    setErrorMessage("No seats configured or available in the current layout.");
-                    return;
-                }
-
-                // 2. Identify unassigned students
-                const assignedStudentIds = new Set(Object.values(currentManualSeats));
-                const unassignedStudents = students.filter(s => !assignedStudentIds.has(s.id));
-                totalSeatsToGenerate = availableSeats.length;
-
-                if (unassignedStudents.length > totalSeatsToGenerate) {
-                    setErrorMessage(`Warning: ${unassignedStudents.length} students remain, but only ${totalSeatsToGenerate} open seats are available.`);
-                }
-                
-                // 3. Simple Random Assignment (Placeholder for complex logic)
-                const shuffledStudents = [...unassignedStudents].sort(() => Math.random() - 0.5);
+                const unassignedStudents = students.filter(s => !manuallyAssignedStudentIds.has(s.id));
                 const newAssignments = { ...currentManualSeats };
-                
-                // Shuffle available seats
-                const shuffledSeats = availableSeats.sort(() => Math.random() - 0.5);
 
-                shuffledStudents.slice(0, shuffledSeats.length).forEach((student, index) => {
-                    const seatKey = shuffledSeats[index];
-                    newAssignments[seatKey] = student.id;
-                });
+                // --- START OF NEW LOGIC ---
+
+                if (view === 'groups' && prioritizeSameSex) {
+                    // --- GROUP VIEW: SAME-SEX LOGIC ---
+
+                    // 1. Get all available tables and their empty seats
+                    const availableTables = [];
+                    const emptyTables = emptyTablesInput.split(',').map(t => parseInt(t.trim())).filter(n => n > 0);
+                    for (let r = 0; r < committedGroupRows; r++) {
+                        for (let c = 0; c < committedGroupCols; c++) {
+                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                            if (emptyTables.includes(tableNumber)) continue;
+                            const groupId = r * committedGroupCols + c;
+                            const tableSeatKeys = [];
+                            for (let s = 0; s < groupSize; s++) {
+                                const key = `${groupId}-${s}`;
+                                // Seat is available if NOT manually assigned AND NOT marked empty
+                                if (!currentManualSeats[key] && groupSeats[key] !== EMPTY_SEAT_ID) {
+                                    tableSeatKeys.push(key);
+                                }
+                            }
+                            if (tableSeatKeys.length > 0) {
+                                availableTables.push({
+                                    groupId,
+                                    tableNumber,
+                                    availableSeatKeys: tableSeatKeys,
+                                    capacity: tableSeatKeys.length
+                                });
+                            }
+                        }
+                    }
+                    
+                    // 2. Sort tables (e.g., fill front first, or just randomize)
+                    if (fillFrontFirst) {
+                        availableTables.sort((a, b) => a.tableNumber - b.tableNumber);
+                    } else {
+                        availableTables.sort(() => Math.random() - 0.5); // Randomize table order
+                    }
+
+                    // 3. Separate unassigned students by gender
+                    let remainingMales = unassignedStudents.filter(s => s.gender === 'male').sort(() => Math.random() - 0.5);
+                    let remainingFemales = unassignedStudents.filter(s => s.gender === 'female').sort(() => Math.random() - 0.5);
+                    let remainingUnspecified = unassignedStudents.filter(s => s.gender === 'unspecified').sort(() => Math.random() - 0.5);
+                    
+                    const unassignedSeats = []; // To hold seats from tables we don't fill
+
+                    // 4. Pass 1: Try to assign same-sex groups to tables
+                    for (const table of availableTables) {
+                        const seats = table.availableSeatKeys;
+                        const capacity = table.capacity;
+                        let studentsToAssign = [];
+
+                        // Check if we can fill this table with a full or partial group of males
+                        if (remainingMales.length >= capacity) {
+                            studentsToAssign = remainingMales.splice(0, capacity);
+                        } else if (remainingFemales.length >= capacity) { // Check for females
+                            studentsToAssign = remainingFemales.splice(0, capacity);
+                        } else if (remainingMales.length > 0 && remainingMales.length <= capacity) { // User's case: e.g., 3 boys, 4-seat table
+                            studentsToAssign = remainingMales.splice(0, remainingMales.length);
+                        } else if (remainingFemales.length > 0 && remainingFemales.length <= capacity) { // Partial female group
+                            studentsToAssign = remainingFemales.splice(0, remainingFemales.length);
+                        }
+
+                        if (studentsToAssign.length > 0) {
+                            // Assign these students to this table
+                            for (let i = 0; i < studentsToAssign.length; i++) {
+                                newAssignments[seats[i]] = studentsToAssign[i].id;
+                            }
+                            // Add any remaining seats on this partial table to the unassigned pool
+                            unassignedSeats.push(...seats.slice(studentsToAssign.length));
+                        } else {
+                            // This table couldn't be filled with a same-sex group, add all its seats to the pool
+                            unassignedSeats.push(...seats);
+                        }
+                    }
+
+                    // 5. Pass 2: Assign all leftovers to all remaining unassigned seats
+                    let leftovers = [...remainingMales, ...remainingFemales, ...remainingUnspecified].sort(() => Math.random() - 0.5);
+                    const shuffledUnassignedSeats = unassignedSeats.sort(() => Math.random() - 0.5);
+
+                    for (let i = 0; i < shuffledUnassignedSeats.length; i++) {
+                        if (leftovers.length === 0) break; // Stop if we run out of students
+                        const seatKey = shuffledUnassignedSeats[i];
+                        if (!newAssignments[seatKey]) { // Ensure we don't overwrite something
+                            const student = leftovers.shift();
+                            newAssignments[seatKey] = student.id;
+                        }
+                    }
+                    
+                    if (leftovers.length > 0) {
+                         setErrorMessage(`Warning: ${leftovers.length} students could not be seated.`);
+                    }
+
+                } else if (view === 'traditional' && prioritizeSameSex) {
+                    // --- TRADITIONAL VIEW: SAME-SEX LOGIC ---
+                    
+                    // 1. Get all available seats
+                    let availableSeats = []; // Will store objects { key: 'r-c', r, c }
+                    for (let r = 0; r < committedRows; r++) {
+                        for (let c = 0; c < committedCols; c++) {
+                            const key = `${r}-${c}`;
+                            if (!currentManualSeats[key] && classSeats[key] !== EMPTY_SEAT_ID) {
+                                availableSeats.push({ key, r, c });
+                            }
+                        }
+                    }
+
+                    // 2. Sort seats based on fill preference
+                    if (fillFrontFirst) {
+                        availableSeats.sort((a, b) => a.r - b.r || a.c - b.c); // Sort by row, then column
+                    } else {
+                        availableSeats.sort(() => Math.random() - 0.5); // Shuffle
+                    }
+                    
+                    // 3. Separate students by gender
+                    let remainingMales = unassignedStudents.filter(s => s.gender === 'male').sort(() => Math.random() - 0.5);
+                    let remainingFemales = unassignedStudents.filter(s => s.gender === 'female').sort(() => Math.random() - 0.5);
+                    let remainingUnspecified = unassignedStudents.filter(s => s.gender === 'unspecified').sort(() => Math.random() - 0.5);
+
+                    // 4. Identify pairs based on columnGrouping
+                    const availablePairs = []; // Stores { seat1: 'r-c1', seat2: 'r-c2' }
+                    const singleSeats = []; // Stores 'r-c'
+                    const pairedSeatKeys = new Set();
+                    const availableSeatMap = new Map(availableSeats.map(s => [s.key, s]));
+
+                    for (const seat of availableSeats) {
+                        if (pairedSeatKeys.has(seat.key)) continue;
+
+                        let isPair = false;
+                        // Check for a pair partner to the right
+                        const colInGroup = seat.c % columnGrouping;
+                        if (columnGrouping > 1 && colInGroup < columnGrouping - 1) { // Not the last seat in a potential group
+                            const partnerKey = `${seat.r}-${seat.c + 1}`;
+                            // Check if partner exists, is available, and is in the same column group
+                            if (availableSeatMap.has(partnerKey) && !pairedSeatKeys.has(partnerKey) && (seat.c + 1) % columnGrouping === colInGroup + 1) {
+                                availablePairs.push({ seat1: seat.key, seat2: partnerKey });
+                                pairedSeatKeys.add(seat.key);
+                                pairedSeatKeys.add(partnerKey);
+                                isPair = true;
+                            }
+                        }
+                        
+                        if (!isPair) {
+                            singleSeats.push(seat.key);
+                        }
+                    }
+
+                    // 5. Pass 1: Assign same-sex pairs
+                    for (const pair of availablePairs) {
+                        if (remainingMales.length >= 2) {
+                            newAssignments[pair.seat1] = remainingMales.shift().id;
+                            newAssignments[pair.seat2] = remainingMales.shift().id;
+                        } else if (remainingFemales.length >= 2) {
+                            newAssignments[pair.seat1] = remainingFemales.shift().id;
+                            newAssignments[pair.seat2] = remainingFemales.shift().id;
+                        } else {
+                            // Can't fill as a pair, add back to single seats
+                            singleSeats.push(pair.seat1);
+                            singleSeats.push(pair.seat2);
+                        }
+                    }
+                    
+                    // 6. Pass 2: Assign all leftovers to all remaining single seats
+                    let leftovers = [...remainingMales, ...remainingFemales, ...remainingUnspecified].sort(() => Math.random() - 0.5);
+                    let allSingleSeats = [...singleSeats].sort(() => Math.random() - 0.5); // Shuffle single seats
+
+                    if (leftovers.length > allSingleSeats.length) {
+                        setErrorMessage(`Warning: ${leftovers.length} students remain, but only ${allSingleSeats.length} open seats are available.`);
+                    }
+
+                    leftovers.slice(0, allSingleSeats.length).forEach((student, index) => {
+                        const seatKey = allSingleSeats[index];
+                        if (!newAssignments[seatKey]) { // Should be redundant, but safe
+                            newAssignments[seatKey] = student.id;
+                        }
+                    });
+                    
+                    if (leftovers.length < allSingleSeats.length) {
+                        setErrorMessage(`Draft created. ${allSingleSeats.length - leftovers.length} seats remain empty.`);
+                    }
+
+                } else {
+                    // --- TRADITIONAL VIEW (RANDOM) or RANDOM GROUP LOGIC (Original Fallback) ---
+                    const availableSeats = [];
+                    if (view === 'traditional') {
+                        for (let r = 0; r < committedRows; r++) {
+                            for (let c = 0; c < committedCols; c++) {
+                                const key = `${r}-${c}`;
+                                if (!currentManualSeats[key] && classSeats[key] !== EMPTY_SEAT_ID) {
+                                    availableSeats.push(key);
+                                }
+                            }
+                        }
+                    } else { // Random groups
+                        const emptyTables = emptyTablesInput.split(',').map(t => parseInt(t.trim())).filter(n => n > 0);
+                        for (let r = 0; r < committedGroupRows; r++) {
+                            for (let c = 0; c < committedGroupCols; c++) {
+                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                if (emptyTables.includes(tableNumber)) continue;
+                                const groupId = r * committedGroupCols + c;
+                                for (let s = 0; s < groupSize; s++) {
+                                    const key = `${groupId}-${s}`;
+                                    if (!currentManualSeats[key] && groupSeats[key] !== EMPTY_SEAT_ID) {
+                                        availableSeats.push(key);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (unassignedStudents.length > availableSeats.length) {
+                        setErrorMessage(`Warning: ${unassignedStudents.length} students remain, but only ${availableSeats.length} open seats are available.`);
+                    }
+
+                    const shuffledStudents = [...unassignedStudents].sort(() => Math.random() - 0.5);
+                    const shuffledSeats = availableSeats.sort(() => Math.random() - 0.5);
+
+                    shuffledStudents.slice(0, shuffledSeats.length).forEach((student, index) => {
+                        const seatKey = shuffledSeats[index];
+                        newAssignments[seatKey] = student.id;
+                    });
+                    
+                    if (unassignedStudents.length < availableSeats.length) {
+                        setErrorMessage(`Draft created. ${availableSeats.length - unassignedStudents.length} seats remain empty.`);
+                    }
+                }
                 
-                // 4. Preserve EMPTY_SEATs
+                // --- END OF NEW LOGIC ---
+
+
+                // 4. Preserve EMPTY_SEATs (for all views)
                  const seatsForView = view === 'traditional' ? classSeats : groupSeats;
                  Object.entries(seatsForView).forEach(([key, value]) => {
                      if (value === EMPTY_SEAT_ID && !newAssignments[key]) {
@@ -399,24 +593,16 @@
 
 
                 // 5. Update state and history
-                const currentSeatState = view === 'traditional' ? classSeats : groupSeats;
-
                 const newHistoryEntry = {
                     timestamp: new Date(),
                     title: `Draft generated at ${new Date().toLocaleTimeString()}`,
-                    classSeats: view === 'traditional' ? newAssignments : classSeats,
-                    groupSeats: view === 'groups' ? newAssignments : groupSeats,
+                    classSeats: view === 'traditional' ? newAssignments : (view === 'groups' ? classSeats : {}), // Only update the relevant view's seats
+                    groupSeats: view === 'groups' ? newAssignments : (view === 'traditional' ? groupSeats : {}),
                     view: view,
                 };
                 
                 setHistory(prev => [newHistoryEntry, ...prev].slice(0, 10)); // Keep last 10
                 setCurrentSeats(newAssignments);
-
-                if (unassignedStudents.length < totalSeatsToGenerate) {
-                    setErrorMessage(`Draft created. ${totalSeatsToGenerate - unassignedStudents.length} seats remain empty.`);
-                } else if (unassignedStudents.length <= totalSeatsToGenerate && unassignedStudents.length > 0) {
-                    setErrorMessage(`Draft created. ${unassignedStudents.length} students assigned to ${unassignedStudents.length} seats.`);
-                }
             };
 
             const restoreFromHistory = (historyEntry) => {
@@ -1011,4 +1197,3 @@
     </script>
 </body>
 </html>
-
