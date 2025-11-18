@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seating planner bot :) </title>
+    <title>Seating Planner bot :) </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -14,6 +14,20 @@
         .sidebar-title { font-size: 1.125rem; font-weight: 600; color: #374151; margin-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
         [type='checkbox'] { border-radius: 0.25rem; }
         .seat-empty { background-color: #e5e7eb; background-image: repeating-linear-gradient(45deg, #d1d5db 25%, transparent 25%, transparent 75%, #d1d5db 75%, #d1d5db), repeating-linear-gradient(45deg, #d1d5db 25%, #e5e7eb 25%, #e5e7eb 75%, #d1d5db 75%, #d1d5db); background-position: 0 0, 5px 5px; background-size: 10px 10px; }
+    
+        @keyframes pulse-bounce {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.05);
+            opacity: 0.9;
+          }
+        }
+        .animate-pulse-bounce {
+          animation: pulse-bounce 2s infinite ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -62,6 +76,9 @@
             const [planTitle, setPlanTitle] = useState("");
 
             // Layout and View State
+            const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+            const [sidebarWidth, setSidebarWidth] = useState(420);
+            const [isResizing, setIsResizing] = useState(false);
             const [rows, setRows] = useState(5); const [cols, setCols] = useState(6);
             const [committedRows, setCommittedRows] = useState(5); const [committedCols, setCommittedCols] = useState(6);
             const [groupRows, setGroupRows] = useState(3); const [groupCols, setGroupCols] = useState(3);
@@ -288,6 +305,41 @@
                 }
                 setGroupingListInput("");
             };
+
+            // --- Resizer Logic ---
+            const sidebarMinWidth = 360;
+            const sidebarMaxWidth = 800;
+
+            const handleResizeMouseDown = useCallback((e) => {
+                e.preventDefault();
+                setIsResizing(true);
+            }, []);
+
+            const handleResizeMouseMove = useCallback((e) => {
+                if (isResizing) {
+                    let newWidth = e.clientX;
+                    if (newWidth < sidebarMinWidth) newWidth = sidebarMinWidth;
+                    if (newWidth > sidebarMaxWidth) newWidth = sidebarMaxWidth;
+                    setSidebarWidth(newWidth);
+                }
+            }, [isResizing]);
+
+            const handleResizeMouseUp = useCallback(() => {
+                setIsResizing(false);
+            }, []);
+
+            useEffect(() => {
+                if (isResizing) {
+                    window.addEventListener('mousemove', handleResizeMouseMove);
+                    window.addEventListener('mouseup', handleResizeMouseUp);
+                }
+                return () => {
+                    window.removeEventListener('mousemove', handleResizeMouseMove);
+                    window.removeEventListener('mouseup', handleResizeMouseUp);
+                };
+            }, [isResizing, handleResizeMouseMove, handleResizeMouseUp]);
+            // --- End Resizer Logic ---
+
 
             const assignSeat = (r, c, studentId) => {
                 const key = `${r}-${c}`;
@@ -766,147 +818,189 @@
 
             return (
                 <div className="flex flex-col md:flex-row min-h-screen md:h-screen font-sans md:overflow-hidden">
-                    <aside className="w-full md:w-[420px] md:max-w-sm bg-white border-r p-6 flex flex-col shadow-lg shrink-0 overflow-y-auto">
-                        <header className="mb-6">
-                            <h1 className="text-3xl font-bold text-center mb-4">Seating Planner</h1>
-                            <div className="flex flex-col sm:flex-row gap-2 p-1 bg-gray-200 rounded-lg">
-                                <button onClick={() => setView('traditional')} className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold text-center transition-all ${view === 'traditional' ? 'bg-indigo-600 text-white shadow' : 'bg-transparent text-gray-600'}`}>
-                                    Classroom Setting
-                                </button>
-                                <button onClick={() => setView('groups')} className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold text-center transition-all ${view === 'groups' ? 'bg-indigo-600 text-white shadow' : 'bg-transparent text-gray-600'}`}>
-                                    Group Settings (e.g. lab)
-                                </button>
-                            </div>
-                        </header>
-                        <div className="flex-grow overflow-y-auto pr-2">
-                             <section className="sidebar-section">
-                                <h2 className="sidebar-title">Plan Title</h2>
-                                <input type="text" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="Enter title of your plan (e.g. 5E Biology)" className="mt-1 w-full p-2 border rounded"/>
-                            </section>
-                             <section className="sidebar-section">
-                                <h2 className="sidebar-title">Layout Settings</h2>
-                                {view === 'traditional' ? ( <>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div><label>Rows</label><input type="number" min="1" value={rows} onChange={e => setRows(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
-                                        <div><label>Columns</label><input type="number" min="1" value={cols} onChange={e => setCols(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
-                                        <div className="col-span-2"><label>Group Columns by</label><input type="number" min="1" value={columnGrouping} onChange={e => setColumnGrouping(parseInt(e.target.value))} className="mt-1 w-full p-2 border rounded"/></div>
+                    <aside 
+                        className={`bg-white border-r flex flex-col shadow-lg shrink-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'p-6' : 'p-0 border-r-0'}`} 
+                        style={{ width: isSidebarOpen ? `${sidebarWidth}px` : '0px' }}
+                    >
+                        {isSidebarOpen && (
+                            <>
+                                <header className="mb-6">
+                                    <h1 className="text-3xl font-bold text-center mb-4">Seating Planner</h1>
+                                    <div className="flex flex-col sm:flex-row gap-2 p-1 bg-gray-200 rounded-lg">
+                                        <button onClick={() => setView('traditional')} className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold text-center transition-all ${view === 'traditional' ? 'bg-indigo-600 text-white shadow' : 'bg-transparent text-gray-600'}`}>
+                                            Classroom Setting
+                                        </button>
+                                        <button onClick={() => setView('groups')} className={`flex-1 py-2 px-3 rounded-md text-sm font-semibold text-center transition-all ${view === 'groups' ? 'bg-indigo-600 text-white shadow' : 'bg-transparent text-gray-600'}`}>
+                                            Group Settings (e.g. lab)
+                                        </button>
                                     </div>
-                                    <div className="mt-4"><label className="font-semibold text-gray-700">Placement Preferences</label>
-                                        <div className="mt-2 space-y-2 text-sm">
-                                            <p>Tall Students (T):</p>
-                                            <div className="flex flex-col ml-4">
-                                                <label><input type="radio" name="tall_pref" value="back_row" checked={tallStudentPlacement === 'back_row'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row only</label>
-                                                <label><input type="radio" name="tall_pref" value="back_two_rows" checked={tallStudentPlacement === 'back_two_rows'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back two rows</label>
-                                                <label><input type="radio" name="tall_pref" value="back_sides" checked={tallStudentPlacement === 'back_sides'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row and at two sides column</label>
+                                </header>
+                                <div className="flex-grow overflow-y-auto pr-2">
+                                     <section className="sidebar-section">
+                                        <h2 className="sidebar-title">Plan Title</h2>
+                                        <input type="text" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="Enter title of your plan (e.g. 5E Biology)" className="mt-1 w-full p-2 border rounded"/>
+                                    </section>
+                                     <section className="sidebar-section">
+                                        <h2 className="sidebar-title">Layout Settings</h2>
+                                        {view === 'traditional' ? ( <>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div><label>Rows</label><input type="number" min="1" value={rows} onChange={e => setRows(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                                <div><label>Columns</label><input type="number" min="1" value={cols} onChange={e => setCols(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                                <div className="col-span-2"><label>Group Columns by</label><input type="number" min="1" value={columnGrouping} onChange={e => setColumnGrouping(parseInt(e.target.value))} className="mt-1 w-full p-2 border rounded"/></div>
                                             </div>
-                                            <p className="pt-2">Front Students (F):</p>
-                                             <div className="flex flex-col ml-4">
-                                                <label><input type="radio" name="front_pref" value="front_row" checked={frontStudentPlacement === 'front_row'} onChange={e => setFrontStudentPlacement(e.target.value)} /> Front row only</label>
-                                                <label><input type="radio" name="front_pref" value="front_two_rows" checked={frontStudentPlacement === 'front_two_rows'} onChange={e => setFrontStudentPlacement(e.target.value)} /> Front two rows</label>
+                                            <div className="mt-4"><label className="font-semibold text-gray-700">Placement Preferences</label>
+                                                <div className="mt-2 space-y-2 text-sm">
+                                                    <p>Tall Students (T):</p>
+                                                    <div className="flex flex-col ml-4">
+                                                        <label><input type="radio" name="tall_pref" value="back_row" checked={tallStudentPlacement === 'back_row'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row only</label>
+                                                        <label><input type="radio" name="tall_pref" value="back_two_rows" checked={tallStudentPlacement === 'back_two_rows'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back two rows</label>
+                                                        <label><input type="radio" name="tall_pref" value="back_sides" checked={tallStudentPlacement === 'back_sides'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row and at two sides column</label>
+                                                    </div>
+                                                    <p className="pt-2">Front Students (F):</p>
+                                                     <div className="flex flex-col ml-4">
+                                                        <label><input type="radio" name="front_pref" value="front_row" checked={frontStudentPlacement === 'front_row'} onChange={e => setFrontStudentPlacement(e.target.value)} /> Front row only</label>
+                                                        <label><input type="radio" name="front_pref" value="front_two_rows" checked={frontStudentPlacement === 'front_two_rows'} onChange={e => setFrontStudentPlacement(e.target.value)} /> Front two rows</label>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
-                                        <div className="mt-2 space-y-2 text-sm ml-4">
-                                            <label className="flex items-center gap-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
-                                            <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front seats first</label>
-                                        </div>
-                                    </div>
-                                    <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
-                                </> ) : ( <>
-                                      <div className="grid grid-cols-2 gap-4">
-                                        <div><label>Rows of Tables</label><input type="number" min="1" value={groupRows} onChange={e => setGroupRows(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
-                                        <div><label>Cols of Tables</label><input type="number" min="1" value={groupCols} onChange={e => setGroupCols(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
-                                        <div className="col-span-2"><label>Max Students per Table</label><input type="number" min="1" value={groupSize} onChange={e => setGroupSize(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
-                                      </div>
-                                      <div className="mt-4"><label>Table Numbering</label>
-                                        <select value={tableNumberingOrder} onChange={e => setTableNumberingOrder(e.target.value)} className="mt-1 w-full p-2 border rounded bg-white">
-                                            <option value="lrtb">Left to right, then top to bottom</option>
-                                            <option value="rltb">Right to left, then top to bottom</option>
-                                            <option value="tblr">Top to bottom, then left to right</option>
-                                            <option value="tbrl">Top to bottom, then right to left</option>
-                                        </select>
-                                      </div>
-                                      <div className="mt-4"><label>Tables to keep empty</label>
-                                          <input type="text" value={emptyTablesInput} onChange={e => setEmptyTablesInput(e.target.value)} placeholder="e.g. 3, 8" className="mt-1 w-full p-2 border rounded"/>
-                                      </div>
-                                      <div className="mt-4"><label className="font-semibold text-gray-700">Placement Preferences</label>
-                                        <div className="mt-2 space-y-2 text-sm">
-                                            <p>Tall Students (T):</p>
-                                            <div className="flex flex-col ml-4">
-                                                <label><input type="radio" name="tall_pref_group" value="back_row" checked={tallStudentPlacementGroups === 'back_row'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row of tables</label>
-                                                <label><input type="radio" name="tall_pref_group" value="back_two_rows" checked={tallStudentPlacementGroups === 'back_two_rows'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back two rows of tables</label>
-                                                <label><input type="radio" name="tall_pref_group" value="back_sides" checked={tallStudentPlacementGroups === 'back_sides'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row & side columns of tables</label>
+                                            <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
+                                                <div className="mt-2 space-y-2 text-sm ml-4">
+                                                    <label className="flex items-center gap-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
+                                                    <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front seats first</label>
+                                                </div>
                                             </div>
-                                            <p className="pt-2">Front Students (F): Prioritized for tables with the lowest numbers.</p>
+                                            <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
+                                        </> ) : ( <>
+                                              <div className="grid grid-cols-2 gap-4">
+                                                <div><label>Rows of Tables</label><input type="number" min="1" value={groupRows} onChange={e => setGroupRows(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                                <div><label>Cols of Tables</label><input type="number" min="1" value={groupCols} onChange={e => setGroupCols(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                                <div className="col-span-2"><label>Max Students per Table</label><input type="number" min="1" value={groupSize} onChange={e => setGroupSize(Math.max(1, parseInt(e.target.value) || 1))} className="mt-1 w-full p-2 border rounded"/></div>
+                                              </div>
+                                              <div className="mt-4"><label>Table Numbering</label>
+                                                <select value={tableNumberingOrder} onChange={e => setTableNumberingOrder(e.target.value)} className="mt-1 w-full p-2 border rounded bg-white">
+                                                    <option value="lrtb">Left to right, then top to bottom</option>
+                                                    <option value="rltb">Right to left, then top to bottom</option>
+                                                    <option value="tblr">Top to bottom, then left to right</option>
+                                                    <option value="tbrl">Top to bottom, then right to left</option>
+                                                </select>
+                                              </div>
+                                              <div className="mt-4"><label>Tables to keep empty</label>
+                                                  <input type="text" value={emptyTablesInput} onChange={e => setEmptyTablesInput(e.target.value)} placeholder="e.g. 3, 8" className="mt-1 w-full p-2 border rounded"/>
+                                              </div>
+                                              <div className="mt-4"><label className="font-semibold text-gray-700">Placement Preferences</label>
+                                                <div className="mt-2 space-y-2 text-sm">
+                                                    <p>Tall Students (T):</p>
+                                                    <div className="flex flex-col ml-4">
+                                                        <label><input type="radio" name="tall_pref_group" value="back_row" checked={tallStudentPlacementGroups === 'back_row'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row of tables</label>
+                                                        <label><input type="radio" name="tall_pref_group" value="back_two_rows" checked={tallStudentPlacementGroups === 'back_two_rows'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back two rows of tables</label>
+                                                        <label><input type="radio" name="tall_pref_group" value="back_sides" checked={tallStudentPlacementGroups === 'back_sides'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row & side columns of tables</label>
+                                                    </div>
+                                                    <p className="pt-2">Front Students (F): Prioritized for tables with the lowest numbers.</p>
+                                                </div>
+                                            </div>
+                                              <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
+                                                <div className="mt-2 space-y-2 text-sm ml-4">
+                                                    <label className="flex items-center gap-2 pt-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
+                                                    <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front tables first</label>
+                                                </div>
+                                              </div>
+                                              <div className="mt-4"><label className="font-semibold text-gray-700">Export Format</label>
+                                                <div className="flex flex-col ml-4 text-sm mt-2">
+                                                    <label><input type="radio" name="group_export" value="list" checked={groupExportFormat === 'list'} onChange={e => setGroupExportFormat(e.target.value)} /> Export as List</label>
+                                                    <label><input type="radio" name="group_export" value="visual" checked={groupExportFormat === 'visual'} onChange={e => setGroupExportFormat(e.target.value)} /> Export as Visual Layout</label>
+                                                </div>
+                                              </div>
+                                              <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
+                                        </> )}
+                                    </section>
+                                    <section className="sidebar-section">
+                                        <h2 className="sidebar-title">Student Input</h2>
+                                         {view === 'groups' && (
+                                            <div className="mb-4">
+                                                <label className="font-semibold text-gray-700">Grouping Strategy</label>
+                                                <select value={groupingStrategy} onChange={e => setGroupingStrategy(e.target.value)} className="mt-1 w-full p-2 border rounded bg-white">
+                                                    <option value="random">Random</option>
+                                                    <option value="heterogeneous">Heterogeneous (Mixed Ability)</option>
+                                                    <option value="homogeneous">Homogeneous (Same Ability)</option>
+                                                </select>
+                                            </div>
+                                        )}
+        
+                                        {view === 'groups' && (groupingStrategy === 'heterogeneous' || groupingStrategy === 'homogeneous') ? (
+                                            <div className="border-2 border-dashed rounded-lg p-3 mb-4">
+                                                <h3 className="font-semibold text-gray-700 text-sm">Ability Grouping Input</h3>
+                                                <p className="text-xs text-gray-500 mt-1 mb-2"> Enter student names below to assign their ability levels. New students will be created automatically. You can use <a href="https://wfn-nyk.github.io/student-grouping-helper/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">this student grouping helper</a> (https://wfn-nyk.github.io/student-grouping-helper/) to sort the students into groups according to their marks. </p>
+                                                <div><label className="text-sm font-medium">High Ability</label><textarea value={highAbilityInput} onChange={e => setHighAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
+                                                <div className="mt-2"><label className="text-sm font-medium">Medium Ability</label><textarea value={mediumAbilityInput} onChange={e => setMediumAbilityInput(e.target.value)} rows="3" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
+                                                <div className="mt-2"><label className="text-sm font-medium">Low Ability</label><textarea value={lowAbilityInput} onChange={e => setLowAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
+                                                <button onClick={handleAbilityInput} className="w-full mt-2 bg-sky-600 text-white py-2 rounded-md hover:bg-sky-700 text-sm">Add & Assign Abilities</button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="text-xs text-gray-600 mb-2">
+                                                    <p>Enter one student per line. Specify gender with ', M' or ', F'.</p>
+                                                </div>
+                                                <textarea value={massInput} onChange={e => setMassInput(e.target.value)} rows="4" placeholder="e.g.&#10;Alice, F&#10;Bob M&#10;Charlie" className="w-full p-2 border rounded"></textarea>
+                                                <button onClick={addStudents} className="w-full mt-2 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Add Student(s)</button>
+                                            </>
+                                        )}
+                                    </section>
+                                     <section className="sidebar-section">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <h2 className="sidebar-title mb-0 pb-0 border-none">Student List ({students.length})</h2>
+                                            <button onClick={clearAllStudents} className="text-sm font-medium text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed" disabled={students.length === 0}>
+                                                Clear All
+                                            </button>
                                         </div>
-                                    </div>
-                                      <div className="mt-4"><label className="font-semibold text-gray-700">Drafting Preferences</label>
-                                        <div className="mt-2 space-y-2 text-sm ml-4">
-                                            <label className="flex items-center gap-2 pt-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
-                                            <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front tables first</label>
+                                        <div className="max-h-60 overflow-y-auto pr-2">
+                                            {students.map(s => <StudentListItem key={s.id} student={s} onUpdate={updateStudent} onDelete={deleteStudent} />)}
                                         </div>
-                                      </div>
-                                      <div className="mt-4"><label className="font-semibold text-gray-700">Export Format</label>
-                                        <div className="flex flex-col ml-4 text-sm mt-2">
-                                            <label><input type="radio" name="group_export" value="list" checked={groupExportFormat === 'list'} onChange={e => setGroupExportFormat(e.target.value)} /> Export as List</label>
-                                            <label><input type="radio" name="group_export" value="visual" checked={groupExportFormat === 'visual'} onChange={e => setGroupExportFormat(e.target.value)} /> Export as Visual Layout</label>
-                                        </div>
-                                      </div>
-                                      <button onClick={handleDisplayLayout} className="w-full mt-3 bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700">Display Layout ({potentialSeats} seats)</button>
-                                </> )}
-                            </section>
-                            <section className="sidebar-section">
-                                <h2 className="sidebar-title">Student Input</h2>
-                                 {view === 'groups' && (
-                                    <div className="mb-4">
-                                        <label className="font-semibold text-gray-700">Grouping Strategy</label>
-                                        <select value={groupingStrategy} onChange={e => setGroupingStrategy(e.target.value)} className="mt-1 w-full p-2 border rounded bg-white">
-                                            <option value="random">Random</option>
-                                            <option value="heterogeneous">Heterogeneous (Mixed Ability)</option>
-                                            <option value="homogeneous">Homogeneous (Same Ability)</option>
-                                        </select>
-                                    </div>
-                                )}
-
-                                {view === 'groups' && (groupingStrategy === 'heterogeneous' || groupingStrategy === 'homogeneous') ? (
-                                    <div className="border-2 border-dashed rounded-lg p-3 mb-4">
-                                        <h3 className="font-semibold text-gray-700 text-sm">Ability Grouping Input</h3>
-                                        <p className="text-xs text-gray-500 mt-1 mb-2">Enter student names below to assign their ability levels. New students will be created automatically.</p>
-                                        <div><label className="text-sm font-medium">High Ability</label><textarea value={highAbilityInput} onChange={e => setHighAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
-                                        <div className="mt-2"><label className="text-sm font-medium">Medium Ability</label><textarea value={mediumAbilityInput} onChange={e => setMediumAbilityInput(e.target.value)} rows="3" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
-                                        <div className="mt-2"><label className="text-sm font-medium">Low Ability</label><textarea value={lowAbilityInput} onChange={e => setLowAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
-                                        <button onClick={handleAbilityInput} className="w-full mt-2 bg-sky-600 text-white py-2 rounded-md hover:bg-sky-700 text-sm">Add & Assign Abilities</button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="text-xs text-gray-600 mb-2">
-                                            <p>Enter one student per line. Specify gender with ', M' or ', F'.</p>
-                                        </div>
-                                        <textarea value={massInput} onChange={e => setMassInput(e.target.value)} rows="4" placeholder="e.g.&#10;Alice, F&#10;Bob M&#10;Charlie" className="w-full p-2 border rounded"></textarea>
-                                        <button onClick={addStudents} className="w-full mt-2 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Add Student(s)</button>
-                                    </>
-                                )}
-                            </section>
-                             <section className="sidebar-section">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h2 className="sidebar-title mb-0 pb-0 border-none">Student List ({students.length})</h2>
-                                    <button onClick={clearAllStudents} className="text-sm font-medium text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed" disabled={students.length === 0}>
-                                        Clear All
+                                    </section>
+                                    <RuleManager students={students} rules={rules} setRules={setRules} view={view} groupingListInput={groupingListInput} setGroupingListInput={setGroupingListInput} onImportGrouping={handleImportGrouping} />
+                                    <HistoryManager history={history} onRestore={restoreFromHistory} />
+                                </div>
+                                {/* --- HIDE BUTTON --- */}
+                                <div className="mt-4">
+                                    <button
+                                        onClick={() => setIsSidebarOpen(false)}
+                                        className="w-full py-2 px-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-semibold flex items-center justify-center gap-2"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" transform="scale(-1, 1)">
+                                            <path fillRule="evenodd" d="M.5 3.5A.5.5 0 0 1 1 4v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5zm4-1a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-1 0v-10a.5.5 0 0 1 .5-.5zM10 .5a.5.5 0 0 1 .5.5v15a.5.5 0 0 1-1 0V1a.5.5 0 0 1 .5-.5z"/>
+                                        </svg>
+                                        Hide Panel
                                     </button>
                                 </div>
-                                <div className="max-h-60 overflow-y-auto pr-2">
-                                    {students.map(s => <StudentListItem key={s.id} student={s} onUpdate={updateStudent} onDelete={deleteStudent} />)}
+                                <div className="mt-auto pt-4 text-center text-xs text-gray-400">
+                                Nyk2025:D
                                 </div>
-                            </section>
-                            <RuleManager students={students} rules={rules} setRules={setRules} view={view} groupingListInput={groupingListInput} setGroupingListInput={setGroupingListInput} onImportGrouping={handleImportGrouping} />
-                            <HistoryManager history={history} onRestore={restoreFromHistory} />
-                        </div>
-                        <div className="mt-auto pt-4 text-center text-xs text-gray-400">
-                         Nyk2025:D
-                        </div>
+                            </>
+                        )}
                     </aside>
-                    <main className="flex-1 p-4 md:p-8 flex flex-col items-center bg-gray-50 min-h-0 min-w-0">
+
+                    {/* --- RESIZER HANDLE --- */}
+                    {isSidebarOpen && (
+                        <div 
+                            className="w-2 cursor-col-resize bg-gray-200 hover:bg-indigo-600 transition-colors duration-200"
+                            onMouseDown={handleResizeMouseDown}
+                        ></div>
+                    )}
+
+                    <main className="flex-1 p-4 md:p-8 flex flex-col items-center bg-gray-50 min-h-0 min-w-0 relative">
+                        {/* --- SHOW SIDEBAR BUTTON --- */}
+                        {!isSidebarOpen && (
+                            <button 
+                                onClick={() => setIsSidebarOpen(true)}
+                                className="absolute top-4 left-4 z-30 bg-indigo-600 text-white py-2 px-4 rounded-lg shadow-lg hover:bg-indigo-700 flex items-center gap-2 animate-pulse-bounce"
+                                title="Show Sidebar"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                                    <path fillRule="evenodd" d="M.5 3.5A.5.5 0 0 1 1 4v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5zm4-1a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-1 0v-10a.5.5 0 0 1 .5-.5zM10 .5a.5.5 0 0 1 .5.5v15a.5.5 0 0 1-1 0V1a.5.5 0 0 1 .5-.5z"/>
+                                </svg>
+                                <span className="font-semibold">Show Panel</span>
+                            </button>
+                        )}
+
                         <div className="w-full flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
                             {/* Left side: View Toggle */}
                             <div>
