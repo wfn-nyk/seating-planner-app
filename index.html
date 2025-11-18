@@ -425,50 +425,151 @@
                 setView(historyEntry.view);
             };
 
-            const exportToWord = () => { 
+            const exportToWord = (currentDisplayView, currentColumnGrouping) => { 
                 const seatData = view === 'traditional' ? classSeats : groupSeats;
-                let exportContent = "";
-                let tableHeader = view === 'traditional' ? `Seating Plan: ${planTitle} (Traditional View)\n` : `Seating Plan: ${planTitle} (Group View)\n`;
-                exportContent += tableHeader + "\n";
+                let exportContent = ""; // This will be our HTML string
+                
+                // 1. Create Date and Title elements
+                const now = new Date();
+                const dateString = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                const fileDateString = now.getFullYear().toString() + 
+                                     (now.getMonth() + 1).toString().padStart(2, '0') + 
+                                     now.getDate().toString().padStart(2, '0');
+                
+                let title = planTitle || 'Untitled';
+                let tableHeader = `<h1>Seating Plan: ${title}</h1>`;
+                let subTitle = `<h2>Generated on: ${dateString}</h2>`;
                 
                 const studentList = students.reduce((acc, s) => { acc[s.id] = s.name; return acc; }, {});
 
+                // 2. Create Teacher Desk HTML
+                const teacherDeskHtml = `
+                    <div style="width: 80%; margin: 20px auto; padding: 20px; background-color: #f3f4f6; border: 1px solid #d1d5db; text-align: center; font-weight: bold; font-family: Arial, sans-serif;">
+                        ${view === 'traditional' ? "Teacher's Desk" : "Teacher's Bench"}
+                    </div>
+                `;
+                
+                // 3. Generate main content based on view
+                let mainSeatingContent = "";
+
                 if (view === 'traditional') {
-                    for (let r = 0; r < committedRows; r++) {
-                        let rowString = `Row ${r + 1}: `;
-                        for (let c = 0; c < committedCols; c++) {
+                    // --- Classroom Setting Export ---
+                    mainSeatingContent += '<table border="1" style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; table-layout: fixed;">';
+                    
+                    const rowIndices = Array.from({ length: committedRows }, (_, i) => i);
+                    if (currentDisplayView === 'traditional') rowIndices.reverse(); // Teacher's view
+                    
+                    rowIndices.forEach(r => {
+                        mainSeatingContent += '<tr>';
+                        
+                        const colsArray = Array.from({ length: committedCols }, (_, i) => i);
+                        if (currentDisplayView === 'traditional') colsArray.reverse(); // Teacher's view
+                        
+                        for (let c_idx = 0; c_idx < colsArray.length; c_idx++) {
+                            const c = colsArray[c_idx];
                             const key = `${r}-${c}`;
                             const studentName = studentList[seatData[key]] || (seatData[key] === EMPTY_SEAT_ID ? '[EMPTY]' : '[Unassigned Seat]');
-                            rowString += `(C${c + 1}: ${studentName}) | `;
-                        }
-                        exportContent += rowString.trim() + "\n";
-                    }
-                } else { // groups view
-                    const tableAssignments = {};
-                    for (let r = 0; r < committedGroupRows; r++) {
-                        for (let c = 0; c < committedGroupCols; c++) {
-                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
-                            const groupId = r * committedGroupCols + c;
-                            tableAssignments[tableNumber] = [];
-                            for (let s = 0; s < groupSize; s++) {
-                                const key = `${groupId}-${s}`;
-                                const studentName = studentList[seatData[key]] || (seatData[key] === EMPTY_SEAT_ID ? '[EMPTY]' : '[Unassigned Seat]');
-                                tableAssignments[tableNumber].push(studentName);
+                            
+                            // Remove R/C label, just show student name
+                            mainSeatingContent += `<td style="padding: 8px; text-align: center; height: 70px; min-width: 80px; vertical-align: middle;">${studentName}</td>`;
+                            
+                            // Add grouping column (aisle)
+                            if ((c_idx + 1) % currentColumnGrouping === 0 && c_idx < colsArray.length - 1) {
+                                mainSeatingContent += '<td style="width: 30px; background-color: #f3f4f6; border-top: none; border-bottom: none; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;"></td>'; // Aisle
                             }
                         }
-                    }
-                    
-                    Object.keys(tableAssignments).sort((a, b) => parseInt(a) - parseInt(b)).forEach(tableNum => {
-                        exportContent += `Table ${tableNum}: ${tableAssignments[tableNum].join(', ')}\n`;
+                        mainSeatingContent += '</tr>';
                     });
+                    mainSeatingContent += '</table>';
+
+                } else { 
+                    // --- Groups Setting Export ---
+                    if (groupExportFormat === 'list') {
+                        // Generate a list view
+                        mainSeatingContent += '<ul style="font-family: Arial, sans-serif; font-size: 12pt; line-height: 1.6;">';
+                        const tableAssignments = {};
+                        for (let r = 0; r < committedGroupRows; r++) {
+                            for (let c = 0; c < committedGroupCols; c++) {
+                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                const groupId = r * committedGroupCols + c;
+                                tableAssignments[tableNumber] = [];
+                                for (let s = 0; s < groupSize; s++) {
+                                    const key = `${groupId}-${s}`;
+                                    const studentName = studentList[seatData[key]] || (seatData[key] === EMPTY_SEAT_ID ? '[EMPTY]' : '[Unassigned Seat]');
+                                    tableAssignments[tableNumber].push(studentName);
+                                }
+                            }
+                        }
+                        Object.keys(tableAssignments).sort((a, b) => parseInt(a) - parseInt(b)).forEach(tableNum => {
+                            mainSeatingContent += `<li><b>Table ${tableNum}:</b> ${tableAssignments[tableNum].join(', ')}</li>`;
+                        });
+                        mainSeatingContent += '</ul>';
+                    } else {
+                        // Generate a visual table view, respecting displayView
+                        mainSeatingContent += '<table border="1" style="border-collapse: collapse; width: 100%; table-layout: fixed; font-family: Arial, sans-serif;">';
+                        
+                        const rowIndices = Array.from({length: committedGroupRows}, (_, i) => i);
+                        if (currentDisplayView === 'traditional') rowIndices.reverse(); // Teacher's view
+                        const colIndices = Array.from({length: committedGroupCols}, (_, i) => i);
+                        if (currentDisplayView === 'traditional') colIndices.reverse(); // Teacher's view
+
+                        rowIndices.forEach(r => {
+                            mainSeatingContent += '<tr>';
+                            colIndices.forEach(c => {
+                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                const groupId = r * committedGroupCols + c;
+                                
+                                mainSeatingContent += '<td style="padding: 8px; vertical-align: top; height: 120px;">';
+                                mainSeatingContent += `<b style="font-size: 14pt;">Table ${tableNumber}</b>`;
+                                mainSeatingContent += '<ul style="margin-top: 5px; padding-left: 20px; font-size: 10pt;">';
+                                
+                                for (let s = 0; s < groupSize; s++) {
+                                    const key = `${groupId}-${s}`;
+                                    const studentName = studentList[seatData[key]] || (seatData[key] === EMPTY_SEAT_ID ? '[EMPTY]' : '[Unassigned Seat]');
+                                    mainSeatingContent += `<li>${studentName}</li>`;
+                                }
+                                
+                                mainSeatingContent += '</ul></td>';
+                            });
+                            mainSeatingContent += '</tr>';
+                        });
+                        mainSeatingContent += '</table>';
+                    }
                 }
 
-                // Simple download function
-                const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' });
+                // 4. Assemble the final export content
+                if (currentDisplayView === 'traditional') {
+                    exportContent = tableHeader + subTitle + mainSeatingContent + teacherDeskHtml;
+                } else {
+                    exportContent = tableHeader + subTitle + teacherDeskHtml + mainSeatingContent;
+                }
+
+                // Create the full HTML for the .doc file
+                const fullHtml = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="UTF-8">
+                        <title>Seating Plan Export</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; }
+                            h1 { font-size: 18pt; color: #333; }
+                            h2 { font-size: 12pt; color: #666; font-weight: normal; }
+                        </style>
+                    </head>
+                    <body>
+                        ${exportContent}
+                    </body>
+                    </html>
+                `;
+
+                // 5. Create and trigger download link with new filename
+                const blob = new Blob([fullHtml], { type: 'application/msword;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${planTitle || 'Seating_Plan'}.txt`;
+                // New Filename Format: YYYYMMDD_(title)-seating plan.doc
+                a.download = `${fileDateString}_(${title})-seating plan.doc`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -641,7 +742,7 @@
                                    <button onClick={generateDraftPlan} className="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">Generate Draft Plan</button>
                                    <button onClick={() => { setGroupSeats({}); setClassSeats({});}} className="bg-yellow-500 text-white py-2 px-4 rounded-md hover:bg-yellow-600">Clear All Seats</button>
                                    <button onClick={resetDraft} className="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Reset Auto-Filled</button>
-                                   <button onClick={exportToWord} className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600">Export as .doc</button>
+                                   <button onClick={() => exportToWord(displayView, columnGrouping)} className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600">Export as .doc</button>
                                </div>
                                {errorMessage && <div className="mt-2 text-sm font-semibold text-red-800 text-right">{errorMessage}</div>}
                             </div>
