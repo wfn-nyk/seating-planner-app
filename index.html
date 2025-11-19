@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seating Planner bot :) </title>
-    <!-- Tags for Social Media Link Previews (e.g., WhatsApp, Facebook) -->
-<meta property="og:title" content="Seating Planner bot :)">
-<meta property="og:description" content="Create and manage classroom and laboratory seating plans. ">
-<meta property="og:type" content="website">
+    <title>Seating Planner bot :)</title>
+    
+    <!-- Tags for Social Media Link Previews -->
+    <meta property="og:title" content="Seating Planner bot :)">
+    <meta property="og:description" content="Create and manage classroom and laboratory seating plans.">
+    <meta property="og:type" content="website">
 
-<!-- Standard description tag (for Google Search, etc.) -->
-<meta name="description" content="Create and manage classroom and laboratory seating plans.">
+    <!-- Standard description tag -->
+    <meta name="description" content="Create and manage classroom and laboratory seating plans.">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -43,11 +45,10 @@
     <script type="text/babel">
         const { useState, useEffect, useCallback, useMemo } = React;
 
-        const LOCAL_STORAGE_KEY = 'seatingPlannerData_v39_STABLE'; // Incremented version
+        const LOCAL_STORAGE_KEY = 'seatingPlannerData_v39_STABLE'; 
         const EMPTY_SEAT_ID = '__EMPTY__';
 
-        // --- Helper Components ---
-        const StudentListItem = React.memo(({ student, onUpdate, onDelete }) => {
+        const StudentListItem = React.memo(({ student, onUpdate, onDelete, view }) => {
             const handleUpdate = (field, value) => {
                 onUpdate({ ...student, [field]: value });
             };
@@ -58,9 +59,13 @@
                     <select value={student.gender} onChange={e => handleUpdate('gender', e.target.value)} className="p-1 border rounded bg-white">
                         <option value="unspecified">N/A</option><option value="male">M</option><option value="female">F</option>
                     </select>
-                     <select value={student.ability} onChange={e => handleUpdate('ability', e.target.value)} className="p-1 border rounded bg-white">
-                        <option value="unspecified">N/A</option><option value="high">High</option><option value="medium">Mid</option><option value="low">Low</option>
-                    </select>
+                     {view === 'groups' ? (
+                        <select value={student.ability} onChange={e => handleUpdate('ability', e.target.value)} className="p-1 border rounded bg-white">
+                            <option value="unspecified">N/A</option><option value="high">High</option><option value="medium">Mid</option><option value="low">Low</option>
+                        </select>
+                     ) : (
+                         <div className="p-1 text-center text-gray-300 text-xs select-none">-</div>
+                     )}
                     <label className="flex items-center justify-center gap-1 cursor-pointer">
                         <input type="checkbox" checked={student.isTall} onChange={e => handleUpdate('isTall', e.target.checked)} /> T
                     </label>
@@ -69,7 +74,7 @@
                     </label>
                     <button onClick={() => onDelete(student.id)} className="text-red-500 hover:text-red-700 justify-self-end">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
                             <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
                         </svg>
                     </button>
@@ -77,19 +82,16 @@
             );
         });
 
-        // --- Main App Component ---
         function SeatingPlanner() {
-            // Plan Info
             const [planTitle, setPlanTitle] = useState("");
 
-            // Layout and View State
             const [isSidebarOpen, setIsSidebarOpen] = useState(true);
             const [sidebarWidth, setSidebarWidth] = useState(420);
             const [isResizing, setIsResizing] = useState(false);
             const [rows, setRows] = useState(5); const [cols, setCols] = useState(6);
             const [committedRows, setCommittedRows] = useState(5); const [committedCols, setCommittedCols] = useState(6);
             const [groupRows, setGroupRows] = useState(3); const [groupCols, setGroupCols] = useState(3);
-            const [committedGroupRows, setCommittedGroupRows] = useState(2); const [committedGroupCols, setCommittedGroupCols] = useState(3);
+            const [committedGroupRows, setCommittedGroupRows] = useState(3); const [committedGroupCols, setCommittedGroupCols] = useState(3);
             const [groupSize, setGroupSize] = useState(4); const [columnGrouping, setColumnGrouping] = useState(2);
             const [tableNumberingOrder, setTableNumberingOrder] = useState('tblr');
             const [view, setView] = useState('traditional');
@@ -103,7 +105,6 @@
             const [groupExportFormat, setGroupExportFormat] = useState('visual');
             const [groupingStrategy, setGroupingStrategy] = useState('random');
             
-            // Student, Seat, and Rule State
             const [students, setStudents] = useState([]);
             const [massInput, setMassInput] = useState("");
             const [highAbilityInput, setHighAbilityInput] = useState("");
@@ -119,8 +120,6 @@
             const [errorMessage, setErrorMessage] = useState("");
             const [groupingListInput, setGroupingListInput] = useState("");
 
-
-            // --- Data Persistence ---
             useEffect(() => {
                 try {
                     const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -134,7 +133,7 @@
                         setRows(data.rows || 5); setCols(data.cols || 6);
                         setCommittedRows(data.committedRows || 5); setCommittedCols(data.committedCols || 6);
                         setGroupRows(data.groupRows || 3); setGroupCols(data.groupCols || 3);
-                        setCommittedGroupRows(data.committedGroupRows || 2); setCommittedGroupCols(data.committedGroupCols || 3);
+                        setCommittedGroupRows(data.committedGroupRows || 3); setCommittedGroupCols(data.committedGroupCols || 3);
                         setGroupSize(data.groupSize || 4); setColumnGrouping(data.columnGrouping || 2);
                         setTableNumberingOrder(data.tableNumberingOrder || 'lrtb');
                         setDisplayView(data.displayView || 'natural');
@@ -172,15 +171,19 @@
 
                 const newStudents = massInput.split('\n').map(line => line.trim()).filter(line => line)
                     .map(line => {
-                        const parts = line.split(/[\t,]/).map(p => p.trim());
-                        let name = parts[0];
-                        if (!name) return null;
+                        const normalizedLine = line.replace(/\t/g, ' ').trim();
+                        if (!normalizedLine) return null;
 
+                        let name = normalizedLine;
                         let gender = 'unspecified';
-                        if (parts.length > 1) {
-                            const genderHint = parts[1].toLowerCase();
-                            if (genderHint === 'm' || genderHint === 'male') gender = 'male';
-                            else if (genderHint === 'f' || genderHint === 'female') gender = 'female';
+
+                        const genderMatch = normalizedLine.match(/^(.*?)[\s,]+([mMfF])$/);
+
+                        if (genderMatch) {
+                            name = genderMatch[1].trim();
+                            const genderChar = genderMatch[2].toLowerCase();
+                            if (genderChar === 'm') gender = 'male';
+                            else if (genderChar === 'f') gender = 'female';
                         }
 
                         let finalName = name;
@@ -237,13 +240,13 @@
                 setLowAbilityInput("");
             };
 
-
             const clearAllStudents = () => {
                 setStudents([]);
                 setClassSeats({});
                 setGroupSeats({});
                 setRules([]);
                 setManuallyAssignedSeats(new Set());
+                setErrorMessage(""); 
             };
 
             const updateStudent = (updatedStudent) => { setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s)); };
@@ -293,7 +296,6 @@
                         groupStudentIds.push(student.id);
                     });
 
-                    // Add a Group Together rule for all students in the line
                     if (groupStudentIds.length >= 2) {
                          newRules.push({ 
                             id: `rule-${ruleIdCounter++}`, 
@@ -313,7 +315,6 @@
                 setGroupingListInput("");
             };
 
-            // --- Resizer Logic ---
             const sidebarMinWidth = 360;
             const sidebarMaxWidth = 800;
 
@@ -345,8 +346,6 @@
                     window.removeEventListener('mouseup', handleResizeMouseUp);
                 };
             }, [isResizing, handleResizeMouseMove, handleResizeMouseUp]);
-            // --- End Resizer Logic ---
-
 
             const assignSeat = (r, c, studentId) => {
                 const key = `${r}-${c}`;
@@ -371,20 +370,33 @@
             const resetDraft = () => { 
                 const newSeats = {}; 
                 const seatsForView = view === 'traditional' ? classSeats : groupSeats;
-                // Preserve manually assigned seats
                 manuallyAssignedSeats.forEach(key => { if(seatsForView[key]) newSeats[key] = seatsForView[key]; }); 
-                // Preserve explicitly marked empty seats
                 Object.entries(seatsForView).forEach(([key, value]) => { if (value === EMPTY_SEAT_ID) newSeats[key] = value; }); 
                 setCurrentSeats(newSeats); 
+                setErrorMessage(""); // Clear error message on reset
             };
             
-            const generateDraftPlan = () => {
-                setErrorMessage(""); // Clear previous errors
-
-                const currentManualSeats = {};
+            const clearAllSeatsInView = () => {
+                const seats = {};
+                const current = view === 'traditional' ? classSeats : groupSeats;
+                const newSeats = {};
+                 Object.entries(current).forEach(([key, value]) => {
+                     if (value === EMPTY_SEAT_ID) newSeats[key] = EMPTY_SEAT_ID;
+                 });
                 
-                // 1. Identify unassigned students
+                setCurrentSeats(newSeats);
+                setManuallyAssignedSeats(new Set()); 
+                setErrorMessage("");
+            };
+
+            const generateDraftPlan = () => {
+                setErrorMessage(""); 
+                const currentManualSeats = {};
                 const manuallyAssignedStudentIds = new Set();
+                
+                // --- PHASE 1: Pre-processing ---
+                let availableSeats = []; 
+                
                 if (view === 'traditional') {
                     for (let r = 0; r < committedRows; r++) {
                         for (let c = 0; c < committedCols; c++) {
@@ -392,257 +404,362 @@
                             if (manuallyAssignedSeats.has(key) && classSeats[key]) {
                                 currentManualSeats[key] = classSeats[key];
                                 manuallyAssignedStudentIds.add(classSeats[key]);
+                            } else if (classSeats[key] !== EMPTY_SEAT_ID) {
+                                availableSeats.push({ key, r, c });
                             }
                         }
                     }
                 } else {
-                     for (let r = 0; r < committedGroupRows; r++) {
+                    const emptyTables = emptyTablesInput.split(',').map(t => parseInt(t.trim())).filter(n => n > 0);
+                    for (let r = 0; r < committedGroupRows; r++) {
                         for (let c = 0; c < committedGroupCols; c++) {
+                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
                             const groupId = r * committedGroupCols + c;
+                            const isTableEmpty = emptyTables.includes(tableNumber);
+                            
                             for (let s = 0; s < groupSize; s++) {
                                 const key = `${groupId}-${s}`;
                                 if (manuallyAssignedSeats.has(key) && groupSeats[key]) {
                                     currentManualSeats[key] = groupSeats[key];
                                     manuallyAssignedStudentIds.add(groupSeats[key]);
+                                } else if (!isTableEmpty && groupSeats[key] !== EMPTY_SEAT_ID) {
+                                    availableSeats.push({ key, r: groupId, c: s });
                                 }
                             }
                         }
-                    }
-                }
-                const unassignedStudents = students.filter(s => !manuallyAssignedStudentIds.has(s.id));
-                const newAssignments = { ...currentManualSeats };
-
-                // --- START OF NEW LOGIC ---
-
-                if (view === 'groups' && prioritizeSameSex) {
-                    // --- GROUP VIEW: SAME-SEX LOGIC ---
-
-                    // 1. Get all available tables and their empty seats
-                    const availableTables = [];
-                    const emptyTables = emptyTablesInput.split(',').map(t => parseInt(t.trim())).filter(n => n > 0);
-                    for (let r = 0; r < committedGroupRows; r++) {
-                        for (let c = 0; c < committedGroupCols; c++) {
-                            const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
-                            if (emptyTables.includes(tableNumber)) continue;
-                            const groupId = r * committedGroupCols + c;
-                            const tableSeatKeys = [];
-                            for (let s = 0; s < groupSize; s++) {
-                                const key = `${groupId}-${s}`;
-                                // Seat is available if NOT manually assigned AND NOT marked empty
-                                if (!currentManualSeats[key] && groupSeats[key] !== EMPTY_SEAT_ID) {
-                                    tableSeatKeys.push(key);
-                                }
-                            }
-                            if (tableSeatKeys.length > 0) {
-                                availableTables.push({
-                                    groupId,
-                                    tableNumber,
-                                    availableSeatKeys: tableSeatKeys,
-                                    capacity: tableSeatKeys.length
-                                });
-                            }
-                        }
-                    }
-                    
-                    // 2. Sort tables (e.g., fill front first, or just randomize)
-                    if (fillFrontFirst) {
-                        availableTables.sort((a, b) => a.tableNumber - b.tableNumber);
-                    } else {
-                        availableTables.sort(() => Math.random() - 0.5); // Randomize table order
-                    }
-
-                    // 3. Separate unassigned students by gender
-                    let remainingMales = unassignedStudents.filter(s => s.gender === 'male').sort(() => Math.random() - 0.5);
-                    let remainingFemales = unassignedStudents.filter(s => s.gender === 'female').sort(() => Math.random() - 0.5);
-                    let remainingUnspecified = unassignedStudents.filter(s => s.gender === 'unspecified').sort(() => Math.random() - 0.5);
-                    
-                    const unassignedSeats = []; // To hold seats from tables we don't fill
-
-                    // 4. Pass 1: Try to assign same-sex groups to tables
-                    for (const table of availableTables) {
-                        const seats = table.availableSeatKeys;
-                        const capacity = table.capacity;
-                        let studentsToAssign = [];
-
-                        // Check if we can fill this table with a full or partial group of males
-                        if (remainingMales.length >= capacity) {
-                            studentsToAssign = remainingMales.splice(0, capacity);
-                        } else if (remainingFemales.length >= capacity) { // Check for females
-                            studentsToAssign = remainingFemales.splice(0, capacity);
-                        } else if (remainingMales.length > 0 && remainingMales.length <= capacity) { // User's case: e.g., 3 boys, 4-seat table
-                            studentsToAssign = remainingMales.splice(0, remainingMales.length);
-                        } else if (remainingFemales.length > 0 && remainingFemales.length <= capacity) { // Partial female group
-                            studentsToAssign = remainingFemales.splice(0, remainingFemales.length);
-                        }
-
-                        if (studentsToAssign.length > 0) {
-                            // Assign these students to this table
-                            for (let i = 0; i < studentsToAssign.length; i++) {
-                                newAssignments[seats[i]] = studentsToAssign[i].id;
-                            }
-                            // Add any remaining seats on this partial table to the unassigned pool
-                            unassignedSeats.push(...seats.slice(studentsToAssign.length));
-                        } else {
-                            // This table couldn't be filled with a same-sex group, add all its seats to the pool
-                            unassignedSeats.push(...seats);
-                        }
-                    }
-
-                    // 5. Pass 2: Assign all leftovers to all remaining unassigned seats
-                    let leftovers = [...remainingMales, ...remainingFemales, ...remainingUnspecified].sort(() => Math.random() - 0.5);
-                    const shuffledUnassignedSeats = unassignedSeats.sort(() => Math.random() - 0.5);
-
-                    for (let i = 0; i < shuffledUnassignedSeats.length; i++) {
-                        if (leftovers.length === 0) break; // Stop if we run out of students
-                        const seatKey = shuffledUnassignedSeats[i];
-                        if (!newAssignments[seatKey]) { // Ensure we don't overwrite something
-                            const student = leftovers.shift();
-                            newAssignments[seatKey] = student.id;
-                        }
-                    }
-                    
-                    if (leftovers.length > 0) {
-                         setErrorMessage(`Warning: ${leftovers.length} students could not be seated.`);
-                    }
-
-                } else if (view === 'traditional' && prioritizeSameSex) {
-                    // --- TRADITIONAL VIEW: SAME-SEX LOGIC ---
-                    
-                    // 1. Get all available seats
-                    let availableSeats = []; // Will store objects { key: 'r-c', r, c }
-                    for (let r = 0; r < committedRows; r++) {
-                        for (let c = 0; c < committedCols; c++) {
-                            const key = `${r}-${c}`;
-                            if (!currentManualSeats[key] && classSeats[key] !== EMPTY_SEAT_ID) {
-                                availableSeats.push({ key, r, c });
-                            }
-                        }
-                    }
-
-                    // 2. Sort seats based on fill preference
-                    if (fillFrontFirst) {
-                        availableSeats.sort((a, b) => a.r - b.r || a.c - b.c); // Sort by row, then column
-                    } else {
-                        availableSeats.sort(() => Math.random() - 0.5); // Shuffle
-                    }
-                    
-                    // 3. Separate students by gender
-                    let remainingMales = unassignedStudents.filter(s => s.gender === 'male').sort(() => Math.random() - 0.5);
-                    let remainingFemales = unassignedStudents.filter(s => s.gender === 'female').sort(() => Math.random() - 0.5);
-                    let remainingUnspecified = unassignedStudents.filter(s => s.gender === 'unspecified').sort(() => Math.random() - 0.5);
-
-                    // 4. Identify pairs based on columnGrouping
-                    const availablePairs = []; // Stores { seat1: 'r-c1', seat2: 'r-c2' }
-                    const singleSeats = []; // Stores 'r-c'
-                    const pairedSeatKeys = new Set();
-                    const availableSeatMap = new Map(availableSeats.map(s => [s.key, s]));
-
-                    for (const seat of availableSeats) {
-                        if (pairedSeatKeys.has(seat.key)) continue;
-
-                        let isPair = false;
-                        // Check for a pair partner to the right
-                        const colInGroup = seat.c % columnGrouping;
-                        if (columnGrouping > 1 && colInGroup < columnGrouping - 1) { // Not the last seat in a potential group
-                            const partnerKey = `${seat.r}-${seat.c + 1}`;
-                            // Check if partner exists, is available, and is in the same column group
-                            if (availableSeatMap.has(partnerKey) && !pairedSeatKeys.has(partnerKey) && (seat.c + 1) % columnGrouping === colInGroup + 1) {
-                                availablePairs.push({ seat1: seat.key, seat2: partnerKey });
-                                pairedSeatKeys.add(seat.key);
-                                pairedSeatKeys.add(partnerKey);
-                                isPair = true;
-                            }
-                        }
-                        
-                        if (!isPair) {
-                            singleSeats.push(seat.key);
-                        }
-                    }
-
-                    // 5. Pass 1: Assign same-sex pairs
-                    for (const pair of availablePairs) {
-                        if (remainingMales.length >= 2) {
-                            newAssignments[pair.seat1] = remainingMales.shift().id;
-                            newAssignments[pair.seat2] = remainingMales.shift().id;
-                        } else if (remainingFemales.length >= 2) {
-                            newAssignments[pair.seat1] = remainingFemales.shift().id;
-                            newAssignments[pair.seat2] = remainingFemales.shift().id;
-                        } else {
-                            // Can't fill as a pair, add back to single seats
-                            singleSeats.push(pair.seat1);
-                            singleSeats.push(pair.seat2);
-                        }
-                    }
-                    
-                    // 6. Pass 2: Assign all leftovers to all remaining single seats
-                    let leftovers = [...remainingMales, ...remainingFemales, ...remainingUnspecified].sort(() => Math.random() - 0.5);
-                    let allSingleSeats = [...singleSeats].sort(() => Math.random() - 0.5); // Shuffle single seats
-
-                    if (leftovers.length > allSingleSeats.length) {
-                        setErrorMessage(`Warning: ${leftovers.length} students remain, but only ${allSingleSeats.length} open seats are available.`);
-                    }
-
-                    leftovers.slice(0, allSingleSeats.length).forEach((student, index) => {
-                        const seatKey = allSingleSeats[index];
-                        if (!newAssignments[seatKey]) { // Should be redundant, but safe
-                            newAssignments[seatKey] = student.id;
-                        }
-                    });
-                    
-                    if (leftovers.length < allSingleSeats.length) {
-                        setErrorMessage(`Draft created. ${allSingleSeats.length - leftovers.length} seats remain empty.`);
-                    }
-
-                } else {
-                    // --- TRADITIONAL VIEW (RANDOM) or RANDOM GROUP LOGIC (Original Fallback) ---
-                    const availableSeats = [];
-                    if (view === 'traditional') {
-                        for (let r = 0; r < committedRows; r++) {
-                            for (let c = 0; c < committedCols; c++) {
-                                const key = `${r}-${c}`;
-                                if (!currentManualSeats[key] && classSeats[key] !== EMPTY_SEAT_ID) {
-                                    availableSeats.push(key);
-                                }
-                            }
-                        }
-                    } else { // Random groups
-                        const emptyTables = emptyTablesInput.split(',').map(t => parseInt(t.trim())).filter(n => n > 0);
-                        for (let r = 0; r < committedGroupRows; r++) {
-                            for (let c = 0; c < committedGroupCols; c++) {
-                                const tableNumber = getTableNumber(r, c, tableNumberingOrder, committedGroupRows, committedGroupCols);
-                                if (emptyTables.includes(tableNumber)) continue;
-                                const groupId = r * committedGroupCols + c;
-                                for (let s = 0; s < groupSize; s++) {
-                                    const key = `${groupId}-${s}`;
-                                    if (!currentManualSeats[key] && groupSeats[key] !== EMPTY_SEAT_ID) {
-                                        availableSeats.push(key);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (unassignedStudents.length > availableSeats.length) {
-                        setErrorMessage(`Warning: ${unassignedStudents.length} students remain, but only ${availableSeats.length} open seats are available.`);
-                    }
-
-                    const shuffledStudents = [...unassignedStudents].sort(() => Math.random() - 0.5);
-                    const shuffledSeats = availableSeats.sort(() => Math.random() - 0.5);
-
-                    shuffledStudents.slice(0, shuffledSeats.length).forEach((student, index) => {
-                        const seatKey = shuffledSeats[index];
-                        newAssignments[seatKey] = student.id;
-                    });
-                    
-                    if (unassignedStudents.length < availableSeats.length) {
-                        setErrorMessage(`Draft created. ${availableSeats.length - unassignedStudents.length} seats remain empty.`);
                     }
                 }
                 
-                // --- END OF NEW LOGIC ---
+                let unassignedStudents = students.filter(s => !manuallyAssignedStudentIds.has(s.id));
+                const newAssignments = { ...currentManualSeats };
+                
+                const consumeSeat = (seatKey) => {
+                    const idx = availableSeats.findIndex(s => s.key === seatKey);
+                    if (idx > -1) availableSeats.splice(idx, 1);
+                };
 
+                // --- PHASE 2: Rules (Group & Separate) ---
+                // Merge Group Rules to create Clusters
+                const groupClusters = [];
+                
+                // 2a. Build Clusters from overlapping group rules
+                rules.filter(r => r.type === 'group').forEach(rule => {
+                    let foundCluster = null;
+                    for (const cluster of groupClusters) {
+                        if (rule.studentIds.some(id => cluster.has(id))) {
+                            foundCluster = cluster;
+                            break;
+                        }
+                    }
+                    if (foundCluster) {
+                        rule.studentIds.forEach(id => foundCluster.add(id));
+                    } else {
+                        const newCluster = new Set(rule.studentIds);
+                        groupClusters.push(newCluster);
+                    }
+                });
+                
+                // Assign Clusters
+                groupClusters.forEach(clusterSet => {
+                    const clusterIds = Array.from(clusterSet).filter(id => !manuallyAssignedStudentIds.has(id));
+                    if (clusterIds.length === 0) return;
 
-                // 4. Preserve EMPTY_SEATs (for all views)
+                    let placed = false;
+                    const candidateStartIndices = Array.from({ length: availableSeats.length }, (_, i) => i).sort(() => Math.random() - 0.5);
+
+                    if (view === 'traditional') {
+                        const seatMap = new Map(availableSeats.map(s => [`${s.r}-${s.c}`, s]));
+                        
+                        for (const startIdx of candidateStartIndices) {
+                            if (placed) break;
+                            const startSeat = availableSeats[startIdx];
+                            if (!seatMap.has(startSeat.key)) continue; 
+
+                            // BFS/Greedy to find N neighbors (Connected Component)
+                            const groupSeats = [startSeat];
+                            const queue = [startSeat];
+                            const visited = new Set([startSeat.key]);
+
+                            while (groupSeats.length < clusterIds.length && queue.length > 0) {
+                                const curr = queue.shift();
+                                const neighbors = [
+                                    { r: curr.r, c: curr.c + 1 }, 
+                                    { r: curr.r + 1, c: curr.c }, 
+                                    { r: curr.r, c: curr.c - 1 }, 
+                                    { r: curr.r - 1, c: curr.c }  
+                                ];
+                                
+                                for (const n of neighbors) {
+                                    const key = `${n.r}-${n.c}`;
+                                    if (seatMap.has(key) && !visited.has(key) && groupSeats.length < clusterIds.length) {
+                                        const s = seatMap.get(key);
+                                        if (availableSeats.find(as => as.key === key)) {
+                                             visited.add(key);
+                                             groupSeats.push(s);
+                                             queue.push(s);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (groupSeats.length === clusterIds.length) {
+                                groupSeats.forEach((seat, i) => {
+                                    newAssignments[seat.key] = clusterIds[i];
+                                    consumeSeat(seat.key);
+                                    seatMap.delete(seat.key); 
+                                });
+                                unassignedStudents = unassignedStudents.filter(s => !clusterIds.includes(s.id));
+                                placed = true;
+                            }
+                        }
+                    } else {
+                        const tables = {};
+                        availableSeats.forEach(s => {
+                            if (!tables[s.r]) tables[s.r] = [];
+                            tables[s.r].push(s);
+                        });
+                        
+                        const tableIds = Object.keys(tables).sort(() => Math.random() - 0.5);
+                        for (const groupId of tableIds) {
+                            if (placed) break;
+                            if (tables[groupId].length >= clusterIds.length) {
+                                const seatsToTake = tables[groupId].slice(0, clusterIds.length);
+                                seatsToTake.forEach((seat, idx) => {
+                                    newAssignments[seat.key] = clusterIds[idx];
+                                    consumeSeat(seat.key);
+                                });
+                                unassignedStudents = unassignedStudents.filter(s => !clusterIds.includes(s.id));
+                                placed = true;
+                            }
+                        }
+                    }
+                });
+
+                // --- PHASE 3: Tall & Front ---
+                let tallStudents = unassignedStudents.filter(s => s.isTall);
+                let frontStudents = unassignedStudents.filter(s => s.isFront);
+                unassignedStudents = unassignedStudents.filter(s => !s.isTall && !s.isFront);
+                
+                if (view === 'traditional') {
+                     const tallCandidateSeats = availableSeats.filter(s => {
+                         const r = s.r; const c = s.c;
+                         return (tallStudentPlacement === 'back_row' && r === committedRows - 1) ||
+                                (tallStudentPlacement === 'back_two_rows' && r >= committedRows - 2) ||
+                                (tallStudentPlacement === 'back_sides' && (r === committedRows - 1 || c === 0 || c === committedCols - 1));
+                     });
+                     
+                     tallStudents.forEach(s => {
+                         if (tallCandidateSeats.length > 0) {
+                             const randIdx = Math.floor(Math.random() * tallCandidateSeats.length);
+                             const seat = tallCandidateSeats.splice(randIdx, 1)[0];
+                             newAssignments[seat.key] = s.id;
+                             consumeSeat(seat.key);
+                         } else { unassignedStudents.push(s); }
+                     });
+                     
+                     const frontCandidateSeats = availableSeats.filter(s => {
+                         const r = s.r; 
+                         return (frontStudentPlacement === 'front_row' && r === 0) ||
+                                (frontStudentPlacement === 'front_two_rows' && r <= 1);
+                     });
+                     
+                     frontStudents.forEach(s => {
+                         if (frontCandidateSeats.length > 0) {
+                             const randIdx = Math.floor(Math.random() * frontCandidateSeats.length);
+                             const seat = frontCandidateSeats.splice(randIdx, 1)[0];
+                             newAssignments[seat.key] = s.id;
+                             consumeSeat(seat.key);
+                         } else { unassignedStudents.push(s); }
+                     });
+                } else {
+                    const getGroupR = (groupId) => Math.floor(groupId / committedGroupCols);
+                    const tallCandidateSeats = availableSeats.filter(s => {
+                        const gr = getGroupR(s.r);
+                        return (tallStudentPlacementGroups === 'back_row' && gr === committedGroupRows - 1) ||
+                               (tallStudentPlacementGroups === 'back_two_rows' && gr >= committedGroupRows - 2) ||
+                               (tallStudentPlacementGroups === 'back_sides' && (gr === committedGroupRows - 1));
+                    });
+                     
+                     tallStudents.forEach(s => {
+                         if (tallCandidateSeats.length > 0) {
+                             const randIdx = Math.floor(Math.random() * tallCandidateSeats.length);
+                             const seat = tallCandidateSeats.splice(randIdx, 1)[0];
+                             newAssignments[seat.key] = s.id;
+                             consumeSeat(seat.key);
+                         } else { unassignedStudents.push(s); }
+                     });
+                     
+                     const frontCandidateSeats = availableSeats.filter(s => {
+                         const gr = getGroupR(s.r);
+                         return gr === 0;
+                     });
+                     
+                     frontStudents.forEach(s => {
+                         if (frontCandidateSeats.length > 0) {
+                             const randIdx = Math.floor(Math.random() * frontCandidateSeats.length);
+                             const seat = frontCandidateSeats.splice(randIdx, 1)[0];
+                             newAssignments[seat.key] = s.id;
+                             consumeSeat(seat.key);
+                         } else { unassignedStudents.push(s); }
+                     });
+                }
+
+                // --- PHASE 4: Same Sex & General Fill ---
+                // Update Sorting of Seats for Phase 4
+                if (view === 'groups') {
+                    if (prioritizeSameSex) {
+                         // Group seats by Table, Shuffle Tables, then Flatten
+                         const tableSeats = {};
+                         availableSeats.forEach(s => {
+                             if (!tableSeats[s.r]) tableSeats[s.r] = [];
+                             tableSeats[s.r].push(s);
+                         });
+                         
+                         let tableOrder = Object.keys(tableSeats);
+                         if (fillFrontFirst) {
+                             tableOrder.sort((a, b) => {
+                                 const tA = getTableNumber(Math.floor(a / committedGroupCols), a % committedGroupCols, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                 const tB = getTableNumber(Math.floor(b / committedGroupCols), b % committedGroupCols, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                                 return tA - tB;
+                             });
+                         } else {
+                             tableOrder.sort(() => Math.random() - 0.5); // Shuffle Tables for randomness
+                         }
+                         
+                         availableSeats = [];
+                         tableOrder.forEach(tId => {
+                             // Sort seats within table by seat index to keep clumps together
+                             tableSeats[tId].sort((a, b) => a.c - b.c);
+                             availableSeats.push(...tableSeats[tId]);
+                         });
+                    } else if (fillFrontFirst) {
+                         availableSeats.sort((a, b) => {
+                             const tA = getTableNumber(Math.floor(a.r / committedGroupCols), a.r % committedGroupCols, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                             const tB = getTableNumber(Math.floor(b.r / committedGroupCols), b.r % committedGroupCols, tableNumberingOrder, committedGroupRows, committedGroupCols);
+                             return tA - tB;
+                         });
+                    } else {
+                        availableSeats.sort(() => Math.random() - 0.5);
+                    }
+                } else {
+                    // Traditional View
+                    if (prioritizeSameSex || fillFrontFirst) {
+                         availableSeats.sort((a, b) => a.r - b.r || a.c - b.c);
+                    } else {
+                         availableSeats.sort(() => Math.random() - 0.5);
+                    }
+                }
+                
+                if (prioritizeSameSex) {
+                    let males = unassignedStudents.filter(s => s.gender === 'male').sort(() => Math.random() - 0.5);
+                    let females = unassignedStudents.filter(s => s.gender === 'female').sort(() => Math.random() - 0.5);
+                    let others = unassignedStudents.filter(s => s.gender === 'unspecified').sort(() => Math.random() - 0.5);
+                    
+                    let sortedStudents = [];
+                    if (Math.random() > 0.5) sortedStudents = [...males, ...females, ...others];
+                    else sortedStudents = [...females, ...males, ...others];
+                    
+                    sortedStudents.forEach((s, i) => {
+                        if (i < availableSeats.length) {
+                             newAssignments[availableSeats[i].key] = s.id;
+                        }
+                    });
+                } else {
+                    unassignedStudents.sort(() => Math.random() - 0.5);
+                    unassignedStudents.forEach((s, i) => {
+                         if (i < availableSeats.length) {
+                             newAssignments[availableSeats[i].key] = s.id;
+                        }
+                    });
+                }
+
+                // --- VERIFICATION STEP (UPDATED: Connectivity Check) ---
+                const violations = [];
+                const getStudentLoc = (id) => {
+                    for(const key in newAssignments) {
+                        if(newAssignments[key] === id) {
+                            const parts = key.split('-');
+                            return { key, r: parseInt(parts[0]), c: parseInt(parts[1]) };
+                        }
+                    }
+                    return null;
+                };
+
+                rules.forEach(rule => {
+                    const ids = rule.studentIds;
+                    const sNames = ids.map(id => students.find(s => s.id === id)?.name).join(', ');
+                    const studentLocs = ids.map(id => getStudentLoc(id)).filter(l => l);
+
+                    // 1. Check all students are seated
+                    if (studentLocs.length < ids.length) {
+                        violations.push(`${rule.type.toUpperCase()}: ${sNames} (Student(s) not seated)`);
+                        return;
+                    }
+
+                    if (rule.type === 'separate') {
+                         // Pairwise check
+                         const minDist = rule.condition.value;
+                         for (let i = 0; i < ids.length; i++) {
+                            for (let j = i + 1; j < ids.length; j++) {
+                                const loc1 = getStudentLoc(ids[i]);
+                                const loc2 = getStudentLoc(ids[j]);
+                                let isViolation = false;
+                                if (view === 'traditional') {
+                                    const dr = Math.abs(loc1.r - loc2.r);
+                                    const dc = Math.abs(loc1.c - loc2.c);
+                                    if (Math.sqrt(dr*dr + dc*dc) <= minDist) isViolation = true;
+                                } else {
+                                    if (loc1.r === loc2.r) isViolation = true; 
+                                }
+                                if (isViolation) {
+                                    violations.push(`Separate: ${sNames} (Too close)`);
+                                    return; // Report once per rule
+                                }
+                            }
+                        }
+                    } else if (rule.type === 'group') {
+                        // Connectivity check (BFS)
+                        if (view === 'traditional') {
+                             // Check if all students in group form a single connected component
+                             const seatKeys = new Set(studentLocs.map(l => l.key));
+                             const startNode = studentLocs[0];
+                             const queue = [startNode];
+                             const visited = new Set([startNode.key]);
+                             
+                             let visitedCount = 0;
+                             while(queue.length > 0) {
+                                 const curr = queue.shift();
+                                 visitedCount++;
+                                 // Check neighbors
+                                 const potentialNeighbors = [
+                                     {r:curr.r+1, c:curr.c}, {r:curr.r-1, c:curr.c},
+                                     {r:curr.r, c:curr.c+1}, {r:curr.r, c:curr.c-1},
+                                     {r:curr.r+1, c:curr.c+1}, {r:curr.r-1, c:curr.c-1},
+                                     {r:curr.r+1, c:curr.c-1}, {r:curr.r-1, c:curr.c+1}
+                                 ];
+                                 
+                                 for(const n of potentialNeighbors) {
+                                     const key = `${n.r}-${n.c}`;
+                                     if (seatKeys.has(key) && !visited.has(key)) {
+                                         visited.add(key);
+                                         queue.push({r:n.r, c:n.c, key});
+                                     }
+                                 }
+                             }
+                             
+                             if (visitedCount < ids.length) {
+                                 violations.push(`Group: ${sNames} (Not contiguous)`);
+                             }
+                        } else {
+                            // Groups view: All must be at same table
+                            const tableId = studentLocs[0].r;
+                            if (studentLocs.some(l => l.r !== tableId)) {
+                                violations.push(`Group: ${sNames} (Split across tables)`);
+                            }
+                        }
+                    }
+                });
+
                  const seatsForView = view === 'traditional' ? classSeats : groupSeats;
                  Object.entries(seatsForView).forEach(([key, value]) => {
                      if (value === EMPTY_SEAT_ID && !newAssignments[key]) {
@@ -650,18 +767,31 @@
                      }
                  });
 
-
-                // 5. Update state and history
                 const newHistoryEntry = {
                     timestamp: new Date(),
                     title: `Draft generated at ${new Date().toLocaleTimeString()}`,
-                    classSeats: view === 'traditional' ? newAssignments : (view === 'groups' ? classSeats : {}), // Only update the relevant view's seats
+                    classSeats: view === 'traditional' ? newAssignments : (view === 'groups' ? classSeats : {}), 
                     groupSeats: view === 'groups' ? newAssignments : (view === 'traditional' ? groupSeats : {}),
                     view: view,
                 };
                 
-                setHistory(prev => [newHistoryEntry, ...prev].slice(0, 10)); // Keep last 10
+                setHistory(prev => [newHistoryEntry, ...prev].slice(0, 10)); 
                 setCurrentSeats(newAssignments);
+
+                const uniqueViolations = [...new Set(violations)];
+                const unseatedStudentsList = students.filter(s => !Object.values(newAssignments).includes(s.id));
+                
+                let finalMessage = "";
+                if (unseatedStudentsList.length > 0) {
+                    finalMessage += `${unseatedStudentsList.length} students could not be seated. `;
+                }
+                
+                if (uniqueViolations.length > 0) {
+                    finalMessage += (finalMessage ? "\n" : "") + "Rules not met:\n" + uniqueViolations.join("\n");
+                } else if (!finalMessage) {
+                    finalMessage = "Draft created successfully.";
+                }
+                setErrorMessage(finalMessage);
             };
 
             const restoreFromHistory = (historyEntry) => {
@@ -813,8 +943,8 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                // New Filename Format: YYYYMMDD_(title)-seating plan.doc
-                a.download = `${fileDateString}_(${title})-seating plan.doc`;
+                // New Filename Format: YYYYMMDD_title-seating plan.doc
+                a.download = `${fileDateString}_${title}-seating plan.doc`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -827,7 +957,7 @@
                 <div className="flex flex-col md:flex-row min-h-screen md:h-screen font-sans md:overflow-hidden">
                     <aside 
                         className={`bg-white border-r flex flex-col shadow-lg shrink-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'p-6' : 'p-0 border-r-0'}`} 
-                        style={{ width: isSidebarOpen ? `${sidebarWidth}px` : '0px' }}
+                        style={{ width: isSidebarOpen ? `${sidebarWidth}px` : '0px', overflow: 'hidden' }}
                     >
                         {isSidebarOpen && (
                             <>
@@ -936,10 +1066,10 @@
                                         {view === 'groups' && (groupingStrategy === 'heterogeneous' || groupingStrategy === 'homogeneous') ? (
                                             <div className="border-2 border-dashed rounded-lg p-3 mb-4">
                                                 <h3 className="font-semibold text-gray-700 text-sm">Ability Grouping Input</h3>
-                                                <p className="text-xs text-gray-500 mt-1 mb-2"> Enter student names below to assign their ability levels. New students will be created automatically. You can use <a href="https://wfn-nyk.github.io/student-grouping-helper/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">this student grouping helper</a> (https://wfn-nyk.github.io/student-grouping-helper/) to sort the students into groups according to their marks. </p>
-                                                <div><label className="text-sm font-medium">High Ability</label><textarea value={highAbilityInput} onChange={e => setHighAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
-                                                <div className="mt-2"><label className="text-sm font-medium">Medium Ability</label><textarea value={mediumAbilityInput} onChange={e => setMediumAbilityInput(e.target.value)} rows="3" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
-                                                <div className="mt-2"><label className="text-sm font-medium">Low Ability</label><textarea value={lowAbilityInput} onChange={e => setLowAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1"></textarea></div>
+                                                <p className="text-xs text-gray-500 mt-1 mb-2">Enter student names below to assign their ability levels. New students will be created automatically. You can use <a href="https://wfn-nyk.github.io/student-grouping-helper/" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">this student grouping helper</a> (https://wfn-nyk.github.io/student-grouping-helper/) to sort the students into groups according to their marks.</p>
+                                                <div><label className="text-sm font-medium">High Ability</label><textarea value={highAbilityInput} onChange={e => setHighAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1 resize-y"></textarea></div>
+                                                <div className="mt-2"><label className="text-sm font-medium">Medium Ability</label><textarea value={mediumAbilityInput} onChange={e => setMediumAbilityInput(e.target.value)} rows="3" className="w-full p-1 border rounded text-sm mt-1 resize-y"></textarea></div>
+                                                <div className="mt-2"><label className="text-sm font-medium">Low Ability</label><textarea value={lowAbilityInput} onChange={e => setLowAbilityInput(e.target.value)} rows="2" className="w-full p-1 border rounded text-sm mt-1 resize-y"></textarea></div>
                                                 <button onClick={handleAbilityInput} className="w-full mt-2 bg-sky-600 text-white py-2 rounded-md hover:bg-sky-700 text-sm">Add & Assign Abilities</button>
                                             </div>
                                         ) : (
@@ -947,7 +1077,7 @@
                                                 <div className="text-xs text-gray-600 mb-2">
                                                     <p>Enter one student per line. Specify gender with ', M' or ', F'.</p>
                                                 </div>
-                                                <textarea value={massInput} onChange={e => setMassInput(e.target.value)} rows="4" placeholder="e.g.&#10;Alice, F&#10;Bob M&#10;Charlie" className="w-full p-2 border rounded"></textarea>
+                                                <textarea value={massInput} onChange={e => setMassInput(e.target.value)} rows="4" placeholder="e.g.&#10;Alice, F&#10;Bob M&#10;Charlie" className="w-full p-2 border rounded resize-y"></textarea>
                                                 <button onClick={addStudents} className="w-full mt-2 bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700">Add Student(s)</button>
                                             </>
                                         )}
@@ -959,55 +1089,48 @@
                                                 Clear All
                                             </button>
                                         </div>
-                                        <div className="max-h-60 overflow-y-auto pr-2">
-                                            {students.map(s => <StudentListItem key={s.id} student={s} onUpdate={updateStudent} onDelete={deleteStudent} />)}
+                                        {/* New Remarks */}
+                                        <p className="text-xs text-gray-500 mb-2 italic">
+                                            Tick 'T' for tall students and 'F' to prioritize front seating. You can also manually pre-assign seats on the grid.
+                                        </p>
+                                        <div className="h-32 min-h-[5rem] resize-y overflow-y-auto border rounded bg-white p-2 text-sm">
+                                            {students.map(s => <StudentListItem key={s.id} student={s} onUpdate={updateStudent} onDelete={deleteStudent} view={view} />)}
                                         </div>
                                     </section>
                                     <RuleManager students={students} rules={rules} setRules={setRules} view={view} groupingListInput={groupingListInput} setGroupingListInput={setGroupingListInput} onImportGrouping={handleImportGrouping} />
                                     <HistoryManager history={history} onRestore={restoreFromHistory} />
                                 </div>
-                                {/* --- HIDE BUTTON --- */}
-                                <div className="mt-4">
-                                    <button
-                                        onClick={() => setIsSidebarOpen(false)}
-                                        className="w-full py-2 px-4 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-semibold flex items-center justify-center gap-2"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" transform="scale(-1, 1)">
-                                            <path fillRule="evenodd" d="M.5 3.5A.5.5 0 0 1 1 4v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5zm4-1a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-1 0v-10a.5.5 0 0 1 .5-.5zM10 .5a.5.5 0 0 1 .5.5v15a.5.5 0 0 1-1 0V1a.5.5 0 0 1 .5-.5z"/>
-                                        </svg>
-                                        Hide Panel
-                                    </button>
-                                </div>
-                                <div className="mt-auto pt-3 text-center text-xs text-gray-400">
-                                nyk2025:D
+                                <div className="mt-auto pt-4 text-center text-xs text-gray-400">
+                                    Nyk2025:D
                                 </div>
                             </>
                         )}
                     </aside>
 
-                    {/* --- RESIZER HANDLE --- */}
-                    {isSidebarOpen && (
-                        <div 
-                            className="w-2 cursor-col-resize bg-gray-200 hover:bg-indigo-600 transition-colors duration-200"
-                            onMouseDown={handleResizeMouseDown}
-                        ></div>
-                    )}
+                    {/* --- PERSISTENT RESIZER HANDLE --- */}
+                     <div 
+                        className="relative w-4 flex-shrink-0 bg-gray-100 border-l border-r border-gray-200 flex flex-col justify-center items-center hover:bg-gray-200 transition-colors z-20"
+                        onMouseDown={isSidebarOpen ? handleResizeMouseDown : undefined}
+                        style={{ cursor: isSidebarOpen ? 'col-resize' : 'default' }}
+                    >
+                         <button 
+                            onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(!isSidebarOpen); }}
+                            className="w-6 h-12 bg-white border border-gray-300 rounded-full shadow flex items-center justify-center text-gray-500 hover:text-indigo-600 focus:outline-none absolute left-1/2 -translate-x-1/2"
+                            title={isSidebarOpen ? "Hide Panel" : "Show Panel"}
+                         >
+                            {isSidebarOpen ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                  <path fillRule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
+                                </svg>
+                            ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                  <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+                                </svg>
+                            )}
+                         </button>
+                    </div>
 
                     <main className="flex-1 p-4 md:p-8 flex flex-col items-center bg-gray-50 min-h-0 min-w-0 relative">
-                        {/* --- SHOW SIDEBAR BUTTON --- */}
-                        {!isSidebarOpen && (
-                            <button 
-                                onClick={() => setIsSidebarOpen(true)}
-                                className="absolute top-4 left-4 z-30 bg-indigo-600 text-white py-2 px-4 rounded-lg shadow-lg hover:bg-indigo-700 flex items-center gap-2 animate-pulse-bounce"
-                                title="Show Sidebar"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                                    <path fillRule="evenodd" d="M.5 3.5A.5.5 0 0 1 1 4v8a.5.5 0 0 1-1 0V4a.5.5 0 0 1 .5-.5zm4-1a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-1 0v-10a.5.5 0 0 1 .5-.5zM10 .5a.5.5 0 0 1 .5.5v15a.5.5 0 0 1-1 0V1a.5.5 0 0 1 .5-.5z"/>
-                                </svg>
-                                <span className="font-semibold">Show Panel</span>
-                            </button>
-                        )}
-
                         <div className="w-full flex flex-col sm:flex-row justify-between items-start mb-4 gap-4">
                             {/* Left side: View Toggle */}
                             <div>
@@ -1027,11 +1150,15 @@
                                 </p>
                                <div className="flex gap-2 flex-wrap justify-end">
                                    <button onClick={generateDraftPlan} className="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600">Generate Draft Plan</button>
-                                   <button onClick={() => { setGroupSeats({}); setClassSeats({});}} className="bg-yellow-500 text-white py-2 px-4 rounded-md hover:bg-yellow-600">Clear All Seats</button>
+                                   <button onClick={clearAllSeatsInView} className="bg-yellow-500 text-white py-2 px-4 rounded-md hover:bg-yellow-600">Clear All Seats</button>
                                    <button onClick={resetDraft} className="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Reset Auto-Filled</button>
                                    <button onClick={() => exportToWord(displayView, columnGrouping)} className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600">Export as .doc</button>
                                </div>
-                               {errorMessage && <div className="mt-2 text-sm font-semibold text-red-800 text-right">{errorMessage}</div>}
+                               {errorMessage && (
+                                    <div className={`mt-2 text-sm font-semibold text-right whitespace-pre-line ${errorMessage.includes("successfully") ? "text-green-700" : "text-red-600 bg-red-50 p-2 rounded border border-red-200"}`}>
+                                        {errorMessage}
+                                    </div>
+                               )}
                             </div>
                         </div>
                         <div className={`w-full flex flex-grow overflow-auto justify-center ${displayView === 'traditional' ? 'flex-col-reverse' : 'flex-col'}`}>
@@ -1081,7 +1208,7 @@
                     <div className={`border-2 border-dashed rounded-lg p-4 ${!hasStudents ? 'bg-gray-100' : 'bg-gray-50'}`}>
                          <div className="mb-3">
                             <h3 className={`font-semibold text-sm mb-2 ${!hasStudents ? 'text-gray-400' : ''}`}>1. Select Students</h3>
-                            <div className="max-h-32 overflow-y-auto border rounded bg-white p-2 text-sm">
+                            <div className="h-32 min-h-[5rem] resize-y overflow-y-auto border rounded bg-white p-2 text-sm">
                                 {hasStudents ? (
                                     <div className="grid grid-cols-2 gap-1">
                                         {students.map(s => (
@@ -1125,7 +1252,7 @@
                                 onChange={e => setGroupingListInput(e.target.value)} 
                                 rows="5" 
                                 placeholder="Group 1: Alice, Bob, Charlie&#10;David, Eve, Frank" 
-                                className="w-full p-2 border rounded text-sm"
+                                className="w-full p-2 border rounded text-sm resize-y"
                             ></textarea>
                             <button onClick={onImportGrouping} className="w-full mt-2 bg-teal-600 text-white py-2 rounded-md hover:bg-teal-700">Apply Grouping & Rules</button>
                         </div>
@@ -1298,6 +1425,3 @@
     </script>
 </body>
 </html>
-
-
-
