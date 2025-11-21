@@ -11,8 +11,8 @@
     <meta property="og:type" content="website">
 
     <!-- Standard description tag -->
-    <meta name="description" content="Create and manage classroom and laboratory seating plans.">
-    
+    <meta name="description" content="A free tool to create and manage classroom seating plans. Easily arrange students in traditional rows or groups.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪑</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -101,6 +101,7 @@
             const [tallStudentPlacementGroups, setTallStudentPlacementGroups] = useState('back_row');
             const [prioritizeSameSex, setPrioritizeSameSex] = useState(false);
             const [fillFrontFirst, setFillFrontFirst] = useState(false);
+            const [fillAllTables, setFillAllTables] = useState(false);
             const [emptyTablesInput, setEmptyTablesInput] = useState("");
             const [groupExportFormat, setGroupExportFormat] = useState('visual');
             const [groupingStrategy, setGroupingStrategy] = useState('random');
@@ -142,6 +143,7 @@
                         setTallStudentPlacementGroups(data.tallStudentPlacementGroups || 'back_row');
                         setPrioritizeSameSex(data.prioritizeSameSex || false);
                         setFillFrontFirst(data.fillFrontFirst || false);
+                        setFillAllTables(data.fillAllTables || false);
                         setEmptyTablesInput(data.emptyTablesInput || "");
                         setGroupExportFormat(data.groupExportFormat || 'visual');
                         setGroupingStrategy(data.groupingStrategy || 'random');
@@ -153,10 +155,10 @@
 
             useEffect(() => {
                 if (!isLoading) {
-                    const dataToSave = JSON.stringify({ planTitle, students, classSeats, groupSeats, manuallyAssignedSeats: [...manuallyAssignedSeats], rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, fillFrontFirst, groupExportFormat, groupingStrategy, emptyTablesInput });
+                    const dataToSave = JSON.stringify({ planTitle, students, classSeats, groupSeats, manuallyAssignedSeats: [...manuallyAssignedSeats], rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, fillFrontFirst, fillAllTables, groupExportFormat, groupingStrategy, emptyTablesInput });
                     localStorage.setItem(LOCAL_STORAGE_KEY, dataToSave);
                 }
-            }, [planTitle, students, classSeats, groupSeats, manuallyAssignedSeats, rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, fillFrontFirst, groupExportFormat, groupingStrategy, emptyTablesInput]);
+            }, [planTitle, students, classSeats, groupSeats, manuallyAssignedSeats, rows, cols, committedRows, committedCols, groupRows, groupCols, committedGroupRows, committedGroupCols, groupSize, tableNumberingOrder, view, displayView, columnGrouping, rules, isLoading, tallStudentPlacement, frontStudentPlacement, tallStudentPlacementGroups, prioritizeSameSex, fillFrontFirst, fillAllTables, groupExportFormat, groupingStrategy, emptyTablesInput]);
 
             const currentSeats = view === 'traditional' ? classSeats : groupSeats;
             const setCurrentSeats = view === 'traditional' ? setClassSeats : setGroupSeats;
@@ -604,8 +606,39 @@
                      });
                 }
 
+                // --- PRUNING FOR FILL ALL TABLES (New) ---
+                if (view === 'groups' && fillAllTables && unassignedStudents.length > 0 && unassignedStudents.length < availableSeats.length) {
+                     const seatsToRemoveCount = availableSeats.length - unassignedStudents.length;
+                     
+                     const tableSeatMap = {};
+                     availableSeats.forEach(s => {
+                         if(!tableSeatMap[s.r]) tableSeatMap[s.r] = [];
+                         tableSeatMap[s.r].push(s);
+                     });
+                     
+                     let currentAvailableCount = availableSeats.length;
+                     let protectionLoop = 0;
+                     
+                     while (currentAvailableCount > unassignedStudents.length && protectionLoop < 10000) {
+                         protectionLoop++;
+                         const tablesWithSeats = Object.keys(tableSeatMap).filter(k => tableSeatMap[k].length > 0);
+                         if (tablesWithSeats.length === 0) break; 
+                         
+                         const randTableId = tablesWithSeats[Math.floor(Math.random() * tablesWithSeats.length)];
+                         const seatsInTable = tableSeatMap[randTableId];
+                         
+                         seatsInTable.sort((a, b) => b.c - a.c);
+                         const seatToRemove = seatsInTable.shift(); 
+                         
+                         const idx = availableSeats.findIndex(s => s.key === seatToRemove.key);
+                         if (idx > -1) {
+                             availableSeats.splice(idx, 1);
+                             currentAvailableCount--;
+                         }
+                     }
+                }
+
                 // --- PHASE 4: Same Sex & General Fill ---
-                // Update Sorting of Seats for Phase 4
                 if (view === 'groups') {
                     if (prioritizeSameSex) {
                          // Group seats by Table, Shuffle Tables, then Flatten
@@ -1028,9 +1061,9 @@
                                                 <div className="mt-2 space-y-2 text-sm">
                                                     <p>Tall Students (T):</p>
                                                     <div className="flex flex-col ml-4">
-                                                        <label><input type="radio" name="tall_pref_group" value="back_row" checked={tallStudentPlacementGroups === 'back_row'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row of tables</label>
-                                                        <label><input type="radio" name="tall_pref_group" value="back_two_rows" checked={tallStudentPlacementGroups === 'back_two_rows'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back two rows of tables</label>
-                                                        <label><input type="radio" name="tall_pref_group" value="back_sides" checked={tallStudentPlacementGroups === 'back_sides'} onChange={e => setTallStudentPlacementGroups(e.target.value)} /> Back row & side columns of tables</label>
+                                                        <label><input type="radio" name="tall_pref_group" value="back_row" checked={tallStudentPlacement === 'back_row'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row of tables</label>
+                                                        <label><input type="radio" name="tall_pref_group" value="back_two_rows" checked={tallStudentPlacement === 'back_two_rows'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back two rows of tables</label>
+                                                        <label><input type="radio" name="tall_pref_group" value="back_sides" checked={tallStudentPlacement === 'back_sides'} onChange={e => setTallStudentPlacement(e.target.value)} /> Back row & side columns of tables</label>
                                                     </div>
                                                     <p className="pt-2">Front Students (F): Prioritized for tables with the lowest numbers.</p>
                                                 </div>
@@ -1039,6 +1072,9 @@
                                                 <div className="mt-2 space-y-2 text-sm ml-4">
                                                     <label className="flex items-center gap-2 pt-2"><input type="checkbox" checked={prioritizeSameSex} onChange={e => setPrioritizeSameSex(e.target.checked)} /> Prioritize same-sex seating</label>
                                                     <label className="flex items-center gap-2"><input type="checkbox" checked={fillFrontFirst} onChange={e => setFillFrontFirst(e.target.checked)} /> Fill front tables first</label>
+                                                    {view === 'groups' && (
+                                                        <label className="flex items-center gap-2"><input type="checkbox" checked={fillAllTables} onChange={e => setFillAllTables(e.target.checked)} /> Distribute to fill all tables</label>
+                                                    )}
                                                 </div>
                                               </div>
                                               <div className="mt-4"><label className="font-semibold text-gray-700">Export Format</label>
@@ -1267,7 +1303,7 @@
                                         {rule.type === 'separate' && <div className="text-gray-600 pl-2">Condition: Keep {rule.condition.value} seats apart.</div>}
                                     </div>
                                     <button onClick={() => deleteRule(rule.id)} className="text-red-400 hover:text-red-600 p-1">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3V2h11v1h-11z"/></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3V2h11v1h-11z"/></svg>
                                     </button>
                                 </div>
                             ))}
